@@ -68,6 +68,16 @@ Prerequisites:
 Android Studio (Koala 이상 권장)
 JDK 17 (Android Studio 내장)
 실물 안드로이드 폰 (권장) 또는 에뮬레이터 (RAM 4GB 이상 설정)
+
+📦 Gradle 동기화 (중요!)
+1. Android Studio에서 프로젝트를 열면 자동으로 Gradle 동기화가 시작됩니다.
+2. 하단 진행 표시줄에서 "Gradle: Executing tasks..." 또는 "Gradle: Build" 메시지를 확인하세요.
+3. 동기화가 완료되면 "Gradle build finished" 메시지가 표시됩니다.
+4. 만약 동기화가 실패하면:
+   - File > Sync Project with Gradle Files (또는 Ctrl+Shift+O / Mac: Cmd+Shift+O)
+   - File > Invalidate Caches > Invalidate and Restart
+   - Android SDK가 제대로 설치되어 있는지 확인 (Tools > SDK Manager)
+
 Permissions:
 앱 실행 후 [다른 앱 위에 그리기] 권한과 **[접근성 권한]**을 반드시 수동으로 허용해야 작동합니다.
 Copyright © 2026 DealGuard Team. All Rights Reserved.
