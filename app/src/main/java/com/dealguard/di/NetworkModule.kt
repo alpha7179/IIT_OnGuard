@@ -2,6 +2,9 @@ package com.dealguard.di
 
 import com.dealguard.BuildConfig
 import com.dealguard.data.remote.api.ThecheatApi
+import com.dealguard.data.repository.ScamCheckRepositoryImpl
+import com.dealguard.domain.repository.ScamCheckRepository
+import dagger.Binds
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -49,5 +52,11 @@ object NetworkModule {
     @Singleton
     fun provideThecheatApi(retrofit: Retrofit): ThecheatApi {
         return retrofit.create(ThecheatApi::class.java)
+    }
+
+    @Provides
+    @Singleton
+    fun provideScamCheckRepository(api: ThecheatApi): ScamCheckRepository {
+        return ScamCheckRepositoryImpl(api)
     }
 }
