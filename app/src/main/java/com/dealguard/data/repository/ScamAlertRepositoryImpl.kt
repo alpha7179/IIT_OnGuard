@@ -10,6 +10,11 @@ import java.util.Date
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * [ScamAlertRepository] 구현체.
+ *
+ * Room [ScamAlertDao]를 통해 [ScamAlertEntity]와 [ScamAlert] 간 변환을 수행한다.
+ */
 @Singleton
 class ScamAlertRepositoryImpl @Inject constructor(
     private val dao: ScamAlertDao

@@ -7,20 +7,12 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * URL 위험도 분석기
+ * URL 위험도 분석기.
  *
- * URL 위험도 점수 기준:
- * - 0.9f: KISA 피싱사이트 DB 등록 URL (확정적 위험, 신고된 피싱)
- * - 0.5f: 금융기관 사칭 의심 (가짜 은행 도메인)
- * - 0.4f: 무료/의심 도메인 (.tk, .ml 등 - 스캠에 자주 사용)
- * - 0.35f: IP 주소 직접 접근 (정상 서비스는 도메인 사용)
- * - 0.3f: 단축 URL (목적지 불명, 추적 어려움)
- * - 0.25f: 피싱 키워드 포함 (login, verify 등)
- * - 0.2f: 과도하게 긴 URL 또는 특수문자 과다 (난독화 의심)
+ * 텍스트에서 URL을 추출한 뒤 KISA DB·도메인·패턴을 검사하여 위험도를 산출한다.
+ * 점수는 여러 위험 요소에 대해 누적되며, 최종 [UrlAnalysisResult.riskScore]는 0~1로 정규화된다.
  *
- * 점수 누적 방식:
- * - 여러 위험 요소가 있으면 점수가 누적됨
- * - 최종 점수는 0~1 범위로 정규화
+ * @param phishingUrlRepository KISA 피싱 URL DB 조회용
  */
 @Singleton
 class UrlAnalyzer @Inject constructor(
@@ -72,6 +64,14 @@ class UrlAnalyzer @Inject constructor(
         "kakaobank", "kbank", "tossbank"
     )
 
+    /**
+     * URL 분석 결과.
+     *
+     * @param urls 추출된 전체 URL 목록
+     * @param suspiciousUrls 위험 판정된 URL 목록
+     * @param reasons 위험 사유 목록 (KISA 등록, 무료 도메인 등)
+     * @param riskScore 종합 위험도 (0.0 ~ 1.0)
+     */
     data class UrlAnalysisResult(
         val urls: List<String>,
         val suspiciousUrls: List<String>,
@@ -79,6 +79,12 @@ class UrlAnalyzer @Inject constructor(
         val riskScore: Float
     )
 
+    /**
+     * 텍스트에서 URL을 추출하고 위험도를 분석한다.
+     *
+     * @param text 분석할 채팅/메시지 텍스트
+     * @return [UrlAnalysisResult] 추출 URL, 의심 URL, 사유, 위험도
+     */
     suspend fun analyze(text: String): UrlAnalysisResult {
         val urls = extractUrls(text)
         val suspiciousUrls = mutableListOf<String>()

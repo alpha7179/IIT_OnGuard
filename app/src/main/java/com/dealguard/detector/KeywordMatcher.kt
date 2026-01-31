@@ -6,15 +6,12 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * 규칙 기반 키워드 매칭기
+ * 규칙 기반 키워드 매칭기.
  *
- * 3단계 가중치 체계로 스캠 키워드를 분석합니다.
- * 스캠 판정 임계값: 0.5 (50%)
+ * CRITICAL/HIGH/MEDIUM 3단계 가중치 체계로 스캠 키워드와 정규식 패턴을 분석한다.
+ * 스캠 판정 임계값은 0.5(50%)이며, 격리된 단일 패턴만으로는 판정하지 않아 오탐을 줄인다.
  *
- * 사용 예시:
- * - "급전 필요합니다" -> HIGH 키워드 1개 (0.25) -> 스캠 아님
- * - "계좌번호 알려주세요" -> CRITICAL 키워드 1개 (0.4) -> 스캠 아님
- * - "급전 필요, 계좌번호 보내세요" -> CRITICAL(0.4) + HIGH(0.25) = 0.65 -> 스캠!
+ * @see ScamAnalysis 분석 결과 반환
  */
 @Singleton
 class KeywordMatcher @Inject constructor() {
@@ -156,6 +153,12 @@ class KeywordMatcher @Inject constructor() {
         PatternInfo(Regex("\\d+만원"), 0.15f, "만원 단위 금액")
     )
 
+    /**
+     * 텍스트에서 위험 키워드·패턴을 분석하여 [ScamAnalysis]를 반환한다.
+     *
+     * @param text 분석할 채팅/메시지 텍스트
+     * @return [ScamAnalysis] (신뢰도, 이유, 탐지된 키워드, RULE_BASED)
+     */
     fun analyze(text: String): ScamAnalysis {
         val normalizedText = text.lowercase().replace("\\s".toRegex(), "")
 
@@ -230,6 +233,11 @@ class KeywordMatcher @Inject constructor() {
         )
     }
 
-    // 하위 호환성을 위한 메서드 (기존 match 메서드 유지)
+    /**
+     * [analyze]와 동일. 하위 호환용 별칭.
+     *
+     * @param text 분석할 텍스트
+     * @return [ScamAnalysis]
+     */
     fun match(text: String): ScamAnalysis = analyze(text)
 }

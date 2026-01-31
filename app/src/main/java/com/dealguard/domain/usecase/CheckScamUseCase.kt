@@ -5,9 +5,11 @@ import com.dealguard.domain.repository.ScamCheckRepository
 import javax.inject.Inject
 
 /**
- * 전화번호 및 계좌번호의 스캠 여부를 확인하는 UseCase
+ * 전화번호·계좌번호의 스캠 여부를 확인하는 UseCase.
  *
- * 더치트 API를 통해 신고된 스캠 정보를 조회합니다.
+ * [ScamCheckRepository]를 통해 더치트 API를 호출하여 신고된 스캠 정보를 조회한다.
+ *
+ * @param repository 더치트 API 연동 저장소
  */
 class CheckScamUseCase @Inject constructor(
     private val repository: ScamCheckRepository

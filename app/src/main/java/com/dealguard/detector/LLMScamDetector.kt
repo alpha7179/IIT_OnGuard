@@ -16,10 +16,13 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * LLM 기반 스캠 탐지기
+ * LLM 기반 스캠 탐지기.
  *
- * MediaPipe LLM Inference API를 사용하여 Gemma 모델로
- * 채팅 메시지를 분석하고 스캠 여부와 이유를 생성합니다.
+ * MediaPipe LLM Inference API와 Gemma 3 270M(4bit 양자화) 모델을 사용하여
+ * 채팅 메시지를 분석하고, 스캠 여부·신뢰도·경고 메시지·의심 문구를 생성한다.
+ * 모델 파일이 없거나 초기화 실패 시 [analyze]는 null을 반환하며, Rule-based만 사용된다.
+ *
+ * @param context [ApplicationContext] 앱 컨텍스트 (assets/filesDir 접근용)
  */
 @Singleton
 class LLMScamDetector @Inject constructor(
@@ -27,8 +30,9 @@ class LLMScamDetector @Inject constructor(
 ) {
     companion object {
         private const val TAG = "LLMScamDetector"
-        private const val MODEL_PATH = "models/gemma-2b-it-gpu-int4.bin"
-        private const val MAX_TOKENS = 512
+        /** assets 내 모델 상대 경로 (MediaPipe .task 형식) */
+        private const val MODEL_PATH = "models/gemma3-270m-it-q4_0-web.task"
+        private const val MAX_TOKENS = 256
         private const val TEMPERATURE = 0.7f
         private const val TOP_K = 40
     }
@@ -38,8 +42,12 @@ class LLMScamDetector @Inject constructor(
     private var isInitialized = false
 
     /**
-     * LLM 모델 초기화
-     * 앱 시작 시 한 번만 호출
+     * LLM 모델을 초기화한다.
+     *
+     * assets에서 [MODEL_PATH]로 모델을 복사한 뒤 MediaPipe로 로드한다.
+     * 이미 초기화된 경우 즉시 true를 반환한다.
+     *
+     * @return 성공 시 true, 모델 없음/예외 시 false
      */
     suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
         if (isInitialized) return@withContext true
@@ -84,15 +92,17 @@ class LLMScamDetector @Inject constructor(
     }
 
     /**
-     * 모델 사용 가능 여부 확인
+     * LLM 모델 사용 가능 여부를 반환한다.
+     *
+     * @return 초기화 완료 및 인스턴스 존재 시 true
      */
     fun isAvailable(): Boolean = isInitialized && llmInference != null
 
     /**
-     * 텍스트 분석 및 스캠 탐지
+     * 주어진 텍스트를 LLM으로 분석하여 스캠 여부와 상세 결과를 반환한다.
      *
      * @param text 분석할 채팅 메시지
-     * @return ScamAnalysis 분석 결과 (모델 미사용 시 null)
+     * @return [ScamAnalysis] 분석 결과. 모델 미사용/빈 응답/파싱 실패 시 null
      */
     suspend fun analyze(text: String): ScamAnalysis? = withContext(Dispatchers.Default) {
         if (!isAvailable()) {
@@ -117,7 +127,10 @@ class LLMScamDetector @Inject constructor(
     }
 
     /**
-     * 스캠 탐지용 프롬프트 생성
+     * 스캠 탐지용 시스템 프롬프트와 사용자 메시지를 조합한 프롬프트를 생성한다.
+     *
+     * @param text 분석 대상 채팅 메시지
+     * @return JSON만 출력하도록 지시한 프롬프트 문자열
      */
     private fun buildPrompt(text: String): String {
         return """
@@ -143,7 +156,10 @@ $text
     }
 
     /**
-     * LLM 응답 파싱
+     * LLM 응답 문자열에서 JSON 블록을 추출해 [ScamAnalysis]로 파싱한다.
+     *
+     * @param response LLM 원시 응답 (앞뒤 일반 텍스트 허용)
+     * @return 파싱 성공 시 [ScamAnalysis], 실패 시 null
      */
     private fun parseResponse(response: String): ScamAnalysis? {
         return try {
@@ -176,7 +192,10 @@ $text
     }
 
     /**
-     * 스캠 유형 문자열 → enum 변환
+     * LLM이 반환한 스캠 유형 문자열을 [ScamType] enum으로 변환한다.
+     *
+     * @param typeString "투자사기", "중고거래사기", "정상" 등 한글 문자열
+     * @return 대응되는 [ScamType]
      */
     private fun parseScamType(typeString: String): ScamType {
         return when {
@@ -192,7 +211,9 @@ $text
     }
 
     /**
-     * 리소스 해제
+     * LLM 인스턴스를 해제하고 리소스를 반환한다.
+     *
+     * 앱 종료 또는 탐지기 교체 시 호출 권장.
      */
     fun close() {
         llmInference?.close()
@@ -201,7 +222,14 @@ $text
     }
 
     /**
-     * LLM 응답 JSON 파싱용 데이터 클래스
+     * LLM 응답 JSON 파싱용 내부 DTO.
+     *
+     * @property isScam 스캠 여부
+     * @property confidence 신뢰도 0~1
+     * @property scamType 한글 유형 문자열
+     * @property warningMessage 사용자용 경고 문구
+     * @property reasons 위험 요소 목록
+     * @property suspiciousParts 의심 문구 인용 목록
      */
     private data class LLMResponse(
         @SerializedName("isScam")

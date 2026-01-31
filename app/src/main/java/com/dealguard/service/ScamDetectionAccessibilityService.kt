@@ -19,9 +19,23 @@ import kotlinx.coroutines.launch
 import java.lang.ref.WeakReference
 import javax.inject.Inject
 
+/**
+ * 접근성 서비스를 이용한 실시간 스캠 탐지 서비스.
+ *
+ * [targetPackages]에 포함된 앱(카카오톡, 당근마켓 등)의 화면 텍스트를 수집하고,
+ * [HybridScamDetector]로 분석한 뒤, 임계값 이상이면 [OverlayService]를 통해 경고를 표시한다.
+ *
+ * - 디바운스(100ms)로 타이핑 중 과도한 분석 방지
+ * - 최소 텍스트 길이(20자)로 짧은 인사·UI 요소 필터링
+ * - 스캠 임계값 0.5로 오탐·미탐 균형
+ *
+ * @see HybridScamDetector 스캠 분석
+ * @see OverlayService 경고 표시
+ */
 @AndroidEntryPoint
 class ScamDetectionAccessibilityService : AccessibilityService() {
 
+    /** 하이브리드 스캠 탐지기 (Rule-based + LLM) */
     @Inject
     lateinit var scamDetector: HybridScamDetector
 

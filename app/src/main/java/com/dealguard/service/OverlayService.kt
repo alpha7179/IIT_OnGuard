@@ -22,28 +22,23 @@ import androidx.core.app.NotificationCompat
 import com.dealguard.R
 import com.dealguard.domain.repository.ScamAlertRepository
 import com.dealguard.domain.model.ScamAlert
-import com.dealguard.domain.model.ScamAnalysis
 import com.dealguard.domain.model.ScamType
-import com.dealguard.domain.model.DetectionMethod
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import java.util.Date
 import javax.inject.Inject
 
 /**
- * 스캠 경고 오버레이 서비스
+ * 스캠 경고 오버레이 서비스.
  *
- * ScamDetectionAccessibilityService에서 스캠 탐지 시 호출됨.
- * 화면 상단에 경고 배너를 표시하고 DB에 기록.
+ * [ScamDetectionAccessibilityService]에서 스캠 탐지 시 Intent로 호출된다.
+ * 화면 상단에 경고 배너를 띄우고, [ScamAlertRepository]에 알림을 저장한다.
+ * LLM이 생성한 경고 메시지·위험 요소·의심 문구를 함께 표시하며,
+ * 신뢰도에 따라 배경색(빨강/주황/노랑)이 자동 변경된다.
  *
- * LLM이 생성한 경고 메시지, 위험 요소, 의심 문구를 함께 표시합니다.
- *
- * UI/UX팀 연동 포인트:
- * - btn_details 클릭 시 상세 화면으로 이동 (구현 필요)
- * - 배경색은 신뢰도에 따라 자동 변경 (아래 색상 로직 참고)
+ * @see ScamAlertRepository 알림 저장
  */
 @AndroidEntryPoint
 class OverlayService : Service() {
@@ -123,7 +118,14 @@ class OverlayService : Service() {
     }
 
     /**
-     * 경고 오버레이 표시
+     * 경고 오버레이 뷰를 생성하여 화면 상단에 표시한다.
+     *
+     * @param confidence 위험도 (0~1, 배경색 및 퍼센트 표시용)
+     * @param reasons 탐지 사유 목록
+     * @param sourceApp 출처 앱 패키지명
+     * @param warningMessage LLM 생성 경고 문구 (null이면 기본 문구 사용)
+     * @param scamType 스캠 유형 (라벨 표시)
+     * @param suspiciousParts 의심 문구 인용 목록
      */
     private fun showOverlayWarning(
         confidence: Float,
@@ -236,7 +238,10 @@ class OverlayService : Service() {
     }
 
     /**
-     * 스캠 유형 라벨 반환
+     * [ScamType]에 대응하는 한글 라벨을 반환한다.
+     *
+     * @param scamType 스캠 유형
+     * @return UI에 표시할 한글 문자열
      */
     private fun getScamTypeLabel(scamType: ScamType): String {
         return when (scamType) {
@@ -252,7 +257,11 @@ class OverlayService : Service() {
     }
 
     /**
-     * 기본 경고 메시지 생성 (LLM 미사용 시)
+     * LLM 경고가 없을 때 사용할 기본 경고 문구를 생성한다.
+     *
+     * @param scamType 스캠 유형
+     * @param confidence 위험도 (문구 톤 조정용)
+     * @return 한글 경고 문구
      */
     private fun generateDefaultWarning(scamType: ScamType, confidence: Float): String {
         val level = when {
@@ -283,7 +292,14 @@ class OverlayService : Service() {
     }
 
     /**
-     * 알림 저장
+     * 탐지 결과를 [ScamAlert]로 변환하여 DB에 저장한다.
+     *
+     * @param confidence 위험도
+     * @param reasons 탐지 사유
+     * @param sourceApp 출처 앱
+     * @param warningMessage 경고 문구
+     * @param scamType 스캠 유형
+     * @param suspiciousParts 의심 문구 목록
      */
     private fun saveAlert(
         confidence: Float,
@@ -295,24 +311,14 @@ class OverlayService : Service() {
     ) {
         serviceScope.launch(Dispatchers.IO) {
             try {
-                // ScamAnalysis 생성
-                val analysis = ScamAnalysis(
-                    isScam = true,
-                    confidence = confidence,
-                    reasons = reasons,
-                    detectedKeywords = suspiciousParts,
-                    detectionMethod = DetectionMethod.HYBRID,
-                    scamType = scamType,
-                    warningMessage = warningMessage,
-                    suspiciousParts = suspiciousParts
-                )
-
                 val alert = ScamAlert(
                     id = 0,
-                    text = warningMessage ?: reasons.joinToString(", "),
+                    message = warningMessage ?: reasons.joinToString(", "),
+                    confidence = confidence,
                     sourceApp = sourceApp,
-                    analysis = analysis,
-                    timestamp = System.currentTimeMillis(),
+                    detectedKeywords = suspiciousParts,
+                    reasons = reasons,
+                    timestamp = java.util.Date(System.currentTimeMillis()),
                     isDismissed = false
                 )
                 scamAlertRepository.insertAlert(alert)

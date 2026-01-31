@@ -9,26 +9,25 @@ import javax.inject.Singleton
 import kotlin.math.max
 
 /**
- * 하이브리드 스캠 탐지기
+ * 하이브리드 스캠 탐지기.
  *
- * Rule-based (KeywordMatcher, UrlAnalyzer)와 LLM 기반 탐지를 결합하여
- * 정확도 높은 스캠 탐지를 수행합니다.
+ * Rule-based([KeywordMatcher], [UrlAnalyzer])와 LLM([LLMScamDetector]) 탐지를 결합하여
+ * 정확도 높은 스캠 탐지를 수행한다.
  *
- * 탐지 흐름:
- * 1. Rule-based 1차 필터 (빠름)
- * 2. 애매한 경우 LLM 추가 분석 (정확함)
- * 3. 결과 결합 및 최종 판정
+ * ## 탐지 흐름
+ * 1. Rule-based 1차 필터 (키워드 + URL)
+ * 2. 신뢰도 0.3~0.7 구간이면 LLM 추가 분석
+ * 3. 가중 평균(Rule 40%, LLM 60%)으로 최종 판정
  *
- * 신뢰도 계산:
- * - 기본: max(키워드 신뢰도, URL 위험도)
- * - URL 보너스: +30% (의심 URL 존재 시)
- * - 조합 보너스: +15% (긴급성 + 금전 + URL 조합)
+ * ## 임계값
+ * - 0.7 초과: 고위험, 즉시 스캠 판정 (LLM 미호출)
+ * - 0.4~0.7: 중위험, 조합 보너스 후 필요 시 LLM 호출
+ * - 0.3~0.7: LLM 트리거 구간
+ * - 0.5 초과: 최종 스캠 판정
  *
- * 임계값:
- * - 0.7 이상: 고위험 (즉시 스캠 판정)
- * - 0.4~0.7: 중위험 (LLM 분석 또는 추가 조합 분석)
- * - 0.3~0.4: 저위험 (LLM 분석 트리거)
- * - 0.5 이상: 최종 스캠 판정
+ * @param keywordMatcher 키워드 기반 규칙 탐지기
+ * @param urlAnalyzer URL 위험도 분석기
+ * @param llmScamDetector LLM 기반 탐지기 (선택)
  */
 @Singleton
 class HybridScamDetector @Inject constructor(
@@ -70,11 +69,11 @@ class HybridScamDetector @Inject constructor(
     fun isLLMAvailable(): Boolean = llmScamDetector.isAvailable()
 
     /**
-     * 텍스트 분석 및 스캠 탐지
+     * 주어진 텍스트를 분석하여 스캠 여부와 상세 결과를 반환한다.
      *
      * @param text 분석할 채팅 메시지
-     * @param useLLM LLM 사용 여부 (기본값: 자동 판단)
-     * @return ScamAnalysis 분석 결과
+     * @param useLLM true이면 애매한 구간에서 LLM 분석 시도, false이면 Rule-based만 사용
+     * @return [ScamAnalysis] 최종 분석 결과 (스캠 여부, 신뢰도, 이유, 경고 메시지 등)
      */
     suspend fun analyze(text: String, useLLM: Boolean = true): ScamAnalysis {
         // 1. Rule-based keyword detection (fast)
@@ -159,7 +158,13 @@ class HybridScamDetector @Inject constructor(
     }
 
     /**
-     * Rule-based 결과와 LLM 결과 결합
+     * Rule-based 결과와 LLM 결과를 가중 평균으로 결합한다.
+     *
+     * @param ruleConfidence 규칙 기반 신뢰도
+     * @param ruleReasons 규칙 기반 탐지 사유
+     * @param detectedKeywords 탐지된 키워드 목록
+     * @param llmResult LLM 분석 결과
+     * @return 결합된 [ScamAnalysis]
      */
     private fun combineResults(
         ruleConfidence: Float,
@@ -189,7 +194,13 @@ class HybridScamDetector @Inject constructor(
     }
 
     /**
-     * Rule-based 결과 생성
+     * Rule-based만으로 [ScamAnalysis]를 생성한다.
+     *
+     * @param confidence 신뢰도
+     * @param reasons 탐지 사유 목록
+     * @param detectedKeywords 탐지된 키워드
+     * @param hasUrlIssues URL 이상 여부 (HYBRID vs RULE_BASED 구분용)
+     * @return [ScamAnalysis]
      */
     private fun createRuleBasedResult(
         confidence: Float,
@@ -216,7 +227,10 @@ class HybridScamDetector @Inject constructor(
     }
 
     /**
-     * Rule-based 결과에서 스캠 유형 추론
+     * 규칙 기반 사유 문자열에서 [ScamType]을 추론한다.
+     *
+     * @param reasons 탐지 사유 목록 (키워드/패턴 설명)
+     * @return 추론된 [ScamType]
      */
     private fun inferScamType(reasons: List<String>): ScamType {
         val reasonText = reasons.joinToString(" ")
@@ -240,7 +254,11 @@ class HybridScamDetector @Inject constructor(
     }
 
     /**
-     * Rule-based 경고 메시지 생성
+     * Rule-based 전용 경고 메시지를 생성한다.
+     *
+     * @param scamType 스캠 유형
+     * @param confidence 신뢰도 (퍼센트 표시용)
+     * @return 사용자에게 표시할 한글 경고 문구
      */
     private fun generateRuleBasedWarning(scamType: ScamType, confidence: Float): String {
         val confidencePercent = (confidence * 100).toInt()
@@ -267,7 +285,9 @@ class HybridScamDetector @Inject constructor(
     }
 
     /**
-     * 리소스 해제
+     * LLM 탐지기 리소스를 해제한다.
+     *
+     * 앱 종료 또는 탐지기 교체 시 호출한다.
      */
     fun close() {
         llmScamDetector.close()
