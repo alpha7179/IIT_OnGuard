@@ -19,15 +19,27 @@ class HybridScamDetectorTest {
     private lateinit var keywordMatcher: KeywordMatcher
     private lateinit var urlAnalyzer: UrlAnalyzer
     private lateinit var mockPhishingUrlRepository: PhishingUrlRepository
+    private lateinit var mockLlmScamDetector: LlmScamDetector
 
     @Before
     fun setup() {
         mockPhishingUrlRepository = mockk()
+        mockLlmScamDetector = mockk() // 2. 모의 객체 생성
+
+        // 기본 동작 정의 (필요 시)
         coEvery { mockPhishingUrlRepository.isPhishingUrl(any()) } returns false
+        // LLM 분석은 기본적으로 스캠이 아니라고 가정하거나 null 반환 설정
+        coEvery { mockLlmScamDetector.analyze(any()) } returns null
 
         keywordMatcher = KeywordMatcher()
         urlAnalyzer = UrlAnalyzer(mockPhishingUrlRepository)
-        hybridScamDetector = HybridScamDetector(keywordMatcher, urlAnalyzer)
+
+        // 3. 생성자에 mockLlmScamDetector 추가
+        hybridScamDetector = HybridScamDetector(
+            keywordMatcher,
+            urlAnalyzer,
+            mockLlmScamDetector
+        )
     }
 
     @Test

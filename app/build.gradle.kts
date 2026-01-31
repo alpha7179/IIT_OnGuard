@@ -141,4 +141,10 @@ dependencies {
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+
+    implementation("androidx.lifecycle:lifecycle-service:2.6.2")
+    implementation("androidx.compose.ui:ui:1.5.4")
+    implementation("androidx.compose.material3:material3:1.1.2")
+    implementation("androidx.savedstate:savedstate-ktx:1.2.1")
+    implementation("androidx.activity:activity-compose:1.8.1")
 }
