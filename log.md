@@ -4,6 +4,37 @@
 
 ---
 
+## [0.2.2] - 2026-01-31
+
+### Fixed
+- **False Negative 스캠 미탐지 버그 수정** (P0 Critical)
+  - 증상: 실제 스캠 메시지("급전 필요", "계좌번호", "입금", "인증번호" 포함)가 탐지되지 않음
+  - 원인: `shouldSkipNode()`가 true 반환 시 자식 노드까지 전체 스킵
+  - 문제 패턴: `SKIP_RESOURCE_ID_PATTERNS`에 "title", "header", "button" 등 포함
+    - 카카오톡 메시지 컨테이너가 이 패턴에 걸려서 모든 메시지 텍스트 스킵됨
+
+### Changed
+
+#### ScamDetectionAccessibilityService.kt
+- 노드 필터링 로직 2단계 분리:
+  - `shouldSkipEntireSubtree()`: 전체 서브트리 스킵 (EditText, 키보드만)
+  - `shouldSkipNodeTextOnly()`: 현재 노드 텍스트만 스킵, 자식은 계속 탐색
+- `extractTextFromNode()` 수정:
+  - 기존: `shouldSkipNode()` true → 즉시 return "" (자식 미탐색)
+  - 수정: 서브트리 스킵 / 텍스트만 스킵 분리, 자식은 항상 탐색
+- 불필요한 상수 제거:
+  - `SKIP_VIEW_CLASSES` 제거 (함수 내부로 이동)
+  - `SKIP_RESOURCE_ID_PATTERNS` 제거 (너무 광범위, "title"/"header" 문제)
+- 엄격한 필터링 패턴만 유지:
+  - "toolbar", "action_bar", "status_bar", "navigation_bar"
+
+### Technical Details
+- 근본 원인: 노드 필터링이 부모 컨테이너에 매칭되면 자식(메시지 텍스트)도 스킵됨
+- 수정 원칙: 키보드/입력필드만 전체 스킵, 나머지는 텍스트만 스킵하고 자식 계속 탐색
+- 테스트: 카카오톡에서 스캠 메시지 탐지 확인 필요
+
+---
+
 ## [0.2.1] - 2026-01-30
 
 ### Fixed
@@ -92,4 +123,4 @@
 ---
 
 *Maintained by Backend Team*
-*Last Updated: 2026-01-30*
+*Last Updated: 2026-01-31*

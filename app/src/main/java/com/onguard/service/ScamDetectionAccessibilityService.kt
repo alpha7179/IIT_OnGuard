@@ -97,22 +97,8 @@ class ScamDetectionAccessibilityService : AccessibilityService() {
 
         // ========== 노드 필터링 설정 (False Positive 방지) ==========
 
-        // 스킵할 뷰 클래스 (입력 필드, 키보드 등)
-        // - 이 클래스들은 메시지 콘텐츠가 아닌 UI 요소
-        private val SKIP_VIEW_CLASSES = setOf(
-            "android.widget.EditText",
-            "android.widget.AutoCompleteTextView",
-            "android.widget.MultiAutoCompleteTextView",
-            "android.widget.SearchView",
-            "android.inputmethodservice.Keyboard",
-            "android.inputmethodservice.KeyboardView",
-            "android.widget.NumberPicker",
-            "android.widget.DatePicker",
-            "android.widget.TimePicker"
-        )
-
-        // 키보드/IME 패키지 프리픽스
-        // - 키보드 앱에서 오는 텍스트는 분석하지 않음
+        // 키보드/IME 패키지 프리픽스 (전체 서브트리 스킵)
+        // - 키보드 앱에서 오는 텍스트(숫자 버튼 등)는 분석하지 않음
         private val KEYBOARD_PACKAGE_PREFIXES = setOf(
             "com.google.android.inputmethod",    // Gboard
             "com.samsung.android.honeyboard",    // Samsung Keyboard
@@ -123,15 +109,8 @@ class ScamDetectionAccessibilityService : AccessibilityService() {
             "com.huawei.inputmethod"             // Huawei Keyboard
         )
 
-        // 스킵할 리소스 ID 패턴
-        // - 이 패턴이 포함된 리소스 ID는 UI 요소로 간주
-        private val SKIP_RESOURCE_ID_PATTERNS = setOf(
-            "input", "edit", "compose", "search", "keyboard",
-            "toolbar", "action_bar", "status_bar", "navigation",
-            "title", "header", "footer", "menu", "button"
-        )
-
         // 접근성 라벨로 간주할 패턴 (버튼, 메뉴 등의 설명)
+        // - contentDescription에 이 패턴이 포함되면 UI 라벨로 간주하여 제외
         private val ACCESSIBILITY_LABEL_PATTERNS = listOf(
             "버튼", "button", "탭", "tab", "메뉴", "menu",
             "닫기", "close", "열기", "open", "클릭", "click",
@@ -210,34 +189,37 @@ class ScamDetectionAccessibilityService : AccessibilityService() {
      * 텍스트 추출 (노드 필터링 적용)
      *
      * False Positive 방지를 위해 다음 노드는 스킵:
-     * - 편집 가능 필드 (EditText 등)
-     * - 키보드/IME 관련 뷰
-     * - 시스템 UI 요소 (toolbar, status bar 등)
+     * - 편집 가능 필드 (EditText 등) → 전체 서브트리 스킵
+     * - 키보드/IME 관련 뷰 → 전체 서브트리 스킵
+     * - 시스템 UI 요소 (toolbar 등) → 현재 노드 텍스트만 스킵, 자식은 탐색
      */
     private fun extractTextFromNode(node: AccessibilityNodeInfo): String {
-        // 필터링: 입력 필드, 키보드, 시스템 UI 스킵
-        if (shouldSkipNode(node)) {
+        // 1. 전체 서브트리 스킵 대상 (EditText, 키보드 등)
+        if (shouldSkipEntireSubtree(node)) {
             return ""
         }
 
         val textBuilder = StringBuilder()
 
-        // 텍스트 추출 (최소 길이 5자 이상만 - 단일 글자/숫자 필터링)
-        node.text?.let { text ->
-            if (text.length >= 5) {
-                textBuilder.append(text).append(" ")
+        // 2. 현재 노드 텍스트만 스킵 대상이 아니면 텍스트 추출
+        if (!shouldSkipNodeTextOnly(node)) {
+            // 텍스트 추출 (최소 길이 5자 이상만 - 단일 글자/숫자 필터링)
+            node.text?.let { text ->
+                if (text.length >= 5) {
+                    textBuilder.append(text).append(" ")
+                }
+            }
+
+            // contentDescription은 접근성 라벨이 아닌 경우만 포함
+            // (버튼 설명, 아이콘 라벨 등은 제외)
+            node.contentDescription?.let { desc ->
+                if (desc.length >= 10 && !isAccessibilityLabel(desc)) {
+                    textBuilder.append(desc).append(" ")
+                }
             }
         }
 
-        // contentDescription은 접근성 라벨이 아닌 경우만 포함
-        // (버튼 설명, 아이콘 라벨 등은 제외)
-        node.contentDescription?.let { desc ->
-            if (desc.length >= 10 && !isAccessibilityLabel(desc)) {
-                textBuilder.append(desc).append(" ")
-            }
-        }
-
-        // 자식 노드 재귀 탐색
+        // 3. 자식 노드 재귀 탐색 (항상 수행 - 컨테이너 안의 메시지 추출을 위해)
         for (i in 0 until node.childCount) {
             node.getChild(i)?.let { child ->
                 try {
@@ -252,44 +234,81 @@ class ScamDetectionAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * 텍스트 추출에서 제외해야 할 노드인지 확인
+     * 전체 서브트리를 스킵해야 하는지 확인
+     *
+     * 다음 경우 노드와 모든 자식 노드를 스킵:
+     * - 편집 가능 필드 (EditText) - 사용자 입력 영역
+     * - 키보드/IME 뷰 - 키보드 UI 숫자/문자
+     * - 키보드 앱 패키지
      *
      * @return true면 해당 노드와 자식 노드 전체 스킵
      */
-    private fun shouldSkipNode(node: AccessibilityNodeInfo): Boolean {
-        // 1. 편집 가능 노드 스킵 (입력 필드)
+    private fun shouldSkipEntireSubtree(node: AccessibilityNodeInfo): Boolean {
+        // 1. 편집 가능 노드 스킵 (입력 필드 - 사용자가 입력 중인 텍스트)
         if (node.isEditable) {
-            Log.d(TAG, "Skipping editable node")
+            Log.d(TAG, "Skipping editable node subtree")
             return true
         }
 
-        // 2. 뷰 클래스 필터링
+        // 2. 키보드/IME 관련 뷰 클래스 (전체 서브트리 스킵)
         val className = node.className?.toString() ?: ""
-        if (SKIP_VIEW_CLASSES.any { className.contains(it, ignoreCase = true) }) {
-            Log.d(TAG, "Skipping by class: $className")
+        val keyboardClasses = setOf(
+            "android.inputmethodservice.Keyboard",
+            "android.inputmethodservice.KeyboardView"
+        )
+        if (keyboardClasses.any { className.contains(it, ignoreCase = true) }) {
+            Log.d(TAG, "Skipping keyboard class subtree: $className")
             return true
         }
 
-        // 3. 리소스 ID 필터링
-        val resourceId = node.viewIdResourceName ?: ""
-        if (resourceId.isNotEmpty() && SKIP_RESOURCE_ID_PATTERNS.any {
-            resourceId.contains(it, ignoreCase = true)
-        }) {
-            Log.d(TAG, "Skipping by resourceId: $resourceId")
-            return true
-        }
-
-        // 4. 키보드/IME 윈도우 체크
+        // 3. 키보드/IME 앱 패키지 (전체 서브트리 스킵)
         try {
             val windowPackage = node.packageName?.toString()
             if (windowPackage != null && KEYBOARD_PACKAGE_PREFIXES.any {
                 windowPackage.startsWith(it)
             }) {
-                Log.d(TAG, "Skipping keyboard package: $windowPackage")
+                Log.d(TAG, "Skipping keyboard package subtree: $windowPackage")
                 return true
             }
         } catch (e: Exception) {
             // 패키지 확인 실패 시 무시
+        }
+
+        return false
+    }
+
+    /**
+     * 현재 노드의 텍스트만 스킵하고 자식은 탐색해야 하는지 확인
+     *
+     * 다음 경우 현재 노드 텍스트만 스킵 (자식은 계속 탐색):
+     * - EditText 등 입력 관련 뷰 클래스
+     * - toolbar, status_bar 등 시스템 UI 컨테이너
+     *
+     * @return true면 현재 노드 텍스트만 스킵, 자식은 계속 탐색
+     */
+    private fun shouldSkipNodeTextOnly(node: AccessibilityNodeInfo): Boolean {
+        // 1. 입력 관련 뷰 클래스 (텍스트만 스킵, 자식은 탐색)
+        val className = node.className?.toString() ?: ""
+        val inputClasses = setOf(
+            "android.widget.EditText",
+            "android.widget.AutoCompleteTextView",
+            "android.widget.MultiAutoCompleteTextView",
+            "android.widget.SearchView"
+        )
+        if (inputClasses.any { className.contains(it, ignoreCase = true) }) {
+            return true
+        }
+
+        // 2. 시스템 UI 컨테이너 (텍스트만 스킵 - 자식에 메시지가 있을 수 있음)
+        val resourceId = node.viewIdResourceName ?: ""
+        // 더 엄격한 패턴만 적용 (title, header 등은 너무 광범위하여 제외)
+        val strictSkipPatterns = setOf(
+            "toolbar", "action_bar", "status_bar", "navigation_bar"
+        )
+        if (resourceId.isNotEmpty() && strictSkipPatterns.any {
+            resourceId.contains(it, ignoreCase = true)
+        }) {
+            return true
         }
 
         return false
