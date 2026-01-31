@@ -9,11 +9,11 @@ plugins {
 }
 
 android {
-    namespace = "com.dealguard"
+    namespace = "com.onguard"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.dealguard"
+        applicationId = "com.onguard"
         minSdk = 26
         targetSdk = 34
         versionCode = 1

@@ -1,4 +1,4 @@
-# DealGuard - 피싱/스캠 탐지 오버레이 앱
+# OnGuard - 피싱/스캠 탐지 오버레이 앱
 
 [![Kotlin](https://img.shields.io/badge/Kotlin-1.9+-purple.svg)](https://kotlinlang.org)
 [![Android](https://img.shields.io/badge/Android-8.0+-green.svg)](https://developer.android.com)
@@ -35,7 +35,7 @@
 
 ## 차별점
 
-| 기존 앱 | DealGuard |
+| 기존 앱 | OnGuard |
 |--------|-----------|
 | 특정 앱에만 동작 | **모든 메신저 지원** |
 | 서버로 데이터 전송 | **온디바이스 LLM 처리** |
@@ -140,8 +140,8 @@ Build:          Gradle Kotlin DSL
 ### 2. 프로젝트 클론
 
 ```bash
-git clone https://github.com/jhparktime/DealGuard.git
-cd DealGuard
+git clone https://github.com/jhparktime/OnGuard.git
+cd OnGuard
 git checkout Ai  # AI 브랜치
 ```
 
@@ -178,7 +178,7 @@ sLLM 기능을 사용하려면 Gemma 모델이 필요합니다:
 ## 프로젝트 구조
 
 ```
-app/src/main/java/com/dealguard/
+app/src/main/java/com/onguard/
 ├── di/                     # Hilt DI modules
 ├── data/                   # Data Layer (Repository, API, DB)
 │   ├── local/              # Room Database

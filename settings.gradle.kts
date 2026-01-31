@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "DealGuard"
+rootProject.name = "OnGuard"
 include(":app")

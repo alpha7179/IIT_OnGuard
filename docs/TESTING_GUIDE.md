@@ -1,4 +1,4 @@
-# DealGuard 테스트 가이드
+# OnGuard 테스트 가이드
 
 ## 📱 실제 디바이스 테스트 절차
 
@@ -6,12 +6,12 @@
 
 #### 1.1 접근성 서비스 활성화
 1. **설정** → **접근성** → **설치된 서비스**
-2. **DealGuard** 선택
+2. **OnGuard** 선택
 3. **서비스 사용** 토글 ON
 4. 경고 팝업에서 **허용** 선택
 
 #### 1.2 오버레이 권한 허용
-1. **설정** → **앱** → **DealGuard**
+1. **설정** → **앱** → **OnGuard**
 2. **다른 앱 위에 표시** 또는 **특별한 접근**
 3. **다른 앱 위에 표시 허용** ON
 
@@ -135,7 +135,7 @@ D/OverlayService: Alert saved to database
 
 #### Monkey 테스트 (스트레스 테스트)
 ```bash
-adb shell monkey -p com.dealguard -v 5000
+adb shell monkey -p com.onguard -v 5000
 ```
 
 ---
@@ -196,13 +196,13 @@ adb logcat | grep -E "ScamDetection|Overlay|KeywordMatcher"
 adb shell settings get secure enabled_accessibility_services
 
 # 오버레이 권한 확인
-adb shell appops get com.dealguard SYSTEM_ALERT_WINDOW
+adb shell appops get com.onguard SYSTEM_ALERT_WINDOW
 
 # 앱 강제 종료
-adb shell am force-stop com.dealguard
+adb shell am force-stop com.onguard
 
 # 앱 데이터 초기화
-adb shell pm clear com.dealguard
+adb shell pm clear com.onguard
 ```
 
 ### Android Studio 팁

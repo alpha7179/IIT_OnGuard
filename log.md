@@ -1,4 +1,4 @@
-# DealGuard 변경 로그 (Changelog)
+# OnGuard 변경 로그 (Changelog)
 
 버그 수정, 기능 추가, 개선 사항을 기록합니다.
 

@@ -23,11 +23,11 @@
 -keep class * implements com.google.gson.JsonDeserializer
 
 # Keep data classes (for Gson/Retrofit)
--keep class com.dealguard.data.remote.dto.** { *; }
--keep class com.dealguard.domain.model.** { *; }
+-keep class com.onguard.data.remote.dto.** { *; }
+-keep class com.onguard.domain.model.** { *; }
 
 # Keep AccessibilityService
--keep class com.dealguard.service.** { *; }
+-keep class com.onguard.service.** { *; }
 
 # OkHttp
 -dontwarn okhttp3.**

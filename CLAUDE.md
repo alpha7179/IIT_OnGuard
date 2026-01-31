@@ -1,4 +1,4 @@
-# DealGuard - 피싱/스캠 탐지 오버레이 앱
+# OnGuard - 피싱/스캠 탐지 오버레이 앱
 
 플랫폼에 구애받지 않는 실시간 스캠 탐지 안드로이드 앱.
 AccessibilityService 기반 텍스트 모니터링 + 온디바이스 AI + 외부 DB 연동.
@@ -75,7 +75,7 @@ Build:          Gradle Kotlin DSL
 ```
 app/
 ├── src/main/
-│   ├── java/com/dealguard/
+│   ├── java/com/onguard/
 │   │   ├── di/                     # Hilt modules
 │   │   │   ├── AppModule.kt
 │   │   │   ├── NetworkModule.kt
@@ -168,7 +168,7 @@ fun observeScamAlerts(): Flow<ScamAlert>
 Classes:        PascalCase          (ScamDetector, OverlayService)
 Functions:      camelCase           (analyzeText, showWarning)
 Constants:      SCREAMING_SNAKE     (MAX_CONFIDENCE, API_TIMEOUT)
-Packages:       lowercase           (com.dealguard.detector)
+Packages:       lowercase           (com.onguard.detector)
 XML IDs:        snake_case          (warning_text, dismiss_button)
 Resources:      type_description    (ic_warning, layout_overlay)
 ```
@@ -260,7 +260,7 @@ val apiKey = BuildConfig.THECHEAT_API_KEY
 ./gradlew connectedAndroidTest
 
 # 특정 테스트 클래스 실행
-./gradlew test --tests "com.dealguard.detector.HybridScamDetectorTest"
+./gradlew test --tests "com.onguard.detector.HybridScamDetectorTest"
 ```
 
 ### Code Quality

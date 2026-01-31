@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">DealGuard</string>
+    <string name="app_name">OnGuard</string>
 
     <!-- Accessibility Service -->
     <string name="accessibility_service_description">
-        DealGuard는 메신저 앱에서 피싱/스캠 메시지를 실시간으로 탐지하여 경고합니다.\n\n
+        OnGuard는 메신저 앱에서 피싱/스캠 메시지를 실시간으로 탐지하여 경고합니다.\n\n
         ✅ 수집 데이터: 메신저 앱의 텍스트만 분석 (이미지/미디어 무시)\n
         ✅ 처리 방식: 모든 분석은 기기 내에서 수행 (서버 전송 없음)\n
         ✅ 대상 앱: 카카오톡, 텔레그램, 왓츠앱, 메신저\n\n
