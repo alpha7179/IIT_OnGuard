@@ -65,13 +65,11 @@ obj/
 test.kt
 test.jar
 
-# LLM Model files (too large for Git)
+# LLM Model files (*.task tracked via Git LFS)
 *.bin
 *.tflite
-*.task
 app/src/main/assets/models/*.bin
 app/src/main/assets/models/*.tflite
-app/src/main/assets/models/*.task
 
 # API Keys (NEVER COMMIT)
 kaggle.json
