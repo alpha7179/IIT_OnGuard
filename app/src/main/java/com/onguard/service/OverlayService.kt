@@ -274,18 +274,37 @@ class OverlayService : Service() {
         }
 
         // Add view to window
+        Log.d(TAG, "Adding overlay view to WindowManager...")
+        Log.d(TAG, "  - WindowManager: ${windowManager != null}")
+        Log.d(TAG, "  - Overlay view: ${overlayView != null}")
+        Log.d(TAG, "  - Params width: ${params.width}, height: ${params.height}")
+        Log.d(TAG, "  - Params type: ${params.type}, flags: ${params.flags}")
+        
         try {
             windowManager?.addView(overlayView, params)
-            Log.d(TAG, "Overlay view added successfully")
+            Log.i(TAG, "=== Overlay view added successfully ===")
+            Log.i(TAG, "  - View should now be visible on screen")
 
             // Auto-dismiss after delay
             handler.postDelayed({
+                Log.d(TAG, "Auto-dismissing overlay after $AUTO_DISMISS_DELAY ms")
                 removeOverlay()
                 stopSelf()
             }, AUTO_DISMISS_DELAY)
 
+        } catch (e: SecurityException) {
+            Log.e(TAG, "=== SecurityException: Overlay permission issue ===", e)
+            Log.e(TAG, "  - Error: ${e.message}")
+            Log.e(TAG, "  - Please check 'Display over other apps' permission in Settings")
+            overlayView = null
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to add overlay view", e)
+            Log.e(TAG, "=== Failed to add overlay view ===", e)
+            Log.e(TAG, "  - Exception type: ${e.javaClass.name}")
+            Log.e(TAG, "  - Exception message: ${e.message}")
+            Log.e(TAG, "  - WindowManager: ${windowManager != null}")
+            Log.e(TAG, "  - Overlay view: ${overlayView != null}")
+            e.printStackTrace()
+            overlayView = null
         }
     }
 
