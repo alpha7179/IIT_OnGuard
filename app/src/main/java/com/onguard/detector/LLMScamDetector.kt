@@ -84,7 +84,7 @@ class LLMScamDetector @Inject constructor(
      */
     suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
         Log.d(TAG, "=== LLM Initialization Started ===")
-        
+
         if (isInitialized) {
             Log.d(TAG, "LLM already initialized, skipping")
             return@withContext true
@@ -123,7 +123,7 @@ class LLMScamDetector @Inject constructor(
             // assets에서 모델 파일 확인 및 복사
             val assetPath = MODEL_PATH
             Log.d(TAG, "Checking assets for model: $assetPath")
-            
+
             try {
                 // assets에 파일이 있는지 확인
                 val assetExists = try {
@@ -132,13 +132,13 @@ class LLMScamDetector @Inject constructor(
                     Log.e(TAG, "Model file not found in assets: $assetPath", e)
                     false
                 }
-                
+
                 if (!assetExists) {
                     Log.e(TAG, "ONNX model file not found in assets: $assetPath")
                     Log.w(TAG, "LLM detection will be disabled. Please add ONNX model to assets/models/")
                     return@withContext false
                 }
-                
+
                 // 기존 파일이 있으면 검증
                 if (modelFile.exists()) {
                     val fileSize = modelFile.length()
@@ -146,7 +146,7 @@ class LLMScamDetector @Inject constructor(
                     Log.d(TAG, "Existing ONNX model file found: ${modelFile.absolutePath}")
                     Log.d(TAG, "  - Size: $fileSize bytes (${fileSize / 1_000_000}MB)")
                     Log.d(TAG, "  - Readable: $fileReadable")
-                    
+
                     // 파일 크기가 비정상적으로 작으면 삭제 후 재복사 (경량 모델 기준 50MB 미만은 이상)
                     if (fileSize < 50_000_000L) {
                         Log.w(TAG, "ONNX model file seems corrupted (too small: ${fileSize} bytes), deleting and re-copying")
@@ -156,18 +156,18 @@ class LLMScamDetector @Inject constructor(
                         Log.d(TAG, "Existing ONNX model file size is valid, skipping copy")
                     }
                 }
-                
+
                 // assets에서 복사 (없거나 손상된 경우)
                 if (!modelFile.exists()) {
                     Log.d(TAG, "Copying model from assets to filesDir...")
                     context.assets.open(assetPath).use { input ->
                         val assetSize = input.available()
                         Log.d(TAG, "  - Asset size: $assetSize bytes")
-                        
+
                         modelFile.parentFile?.mkdirs()
                         val parentCreated = modelFile.parentFile?.exists() ?: false
                         Log.d(TAG, "  - Parent directory created: $parentCreated")
-                        
+
                         modelFile.outputStream().use { output ->
                             var bytesCopied = 0L
                             val buffer = ByteArray(8192)
@@ -182,13 +182,13 @@ class LLMScamDetector @Inject constructor(
                             Log.d(TAG, "  - Total copied: ${bytesCopied / 1_000_000}MB")
                         }
                     }
-                    
+
                     val copiedSize = modelFile.length()
                     val copiedReadable = modelFile.canRead()
                     Log.d(TAG, "ONNX model copied successfully")
                     Log.d(TAG, "  - Final size: $copiedSize bytes (${copiedSize / 1_000_000}MB)")
                     Log.d(TAG, "  - Readable: $copiedReadable")
-                    
+
                     // 복사 후 크기 검증
                     if (copiedSize < 50_000_000L) {
                         Log.e(TAG, "Copied ONNX model file is too small ($copiedSize bytes), likely corrupted")
@@ -211,7 +211,7 @@ class LLMScamDetector @Inject constructor(
             Log.d(TAG, "  - Model file exists: ${modelFile.exists()}")
             Log.d(TAG, "  - Model file readable: ${modelFile.canRead()}")
             Log.d(TAG, "  - Model file size: ${modelFile.length()} bytes")
-            
+
             // LLM 로드 직전 메모리 확보 (저사양 기기 대응)
             System.gc()
 
@@ -222,7 +222,6 @@ class LLMScamDetector @Inject constructor(
                     setIntraOpNumThreads(1)
                     setInterOpNumThreads(1)
                     setExecutionMode(OrtSession.SessionOptions.ExecutionMode.SEQUENTIAL)
-                    setUsePerSessionThreads(false)
                 }
                 val session = env.createSession(modelFile.absolutePath, sessionOptions)
 
@@ -316,7 +315,7 @@ class LLMScamDetector @Inject constructor(
         Log.d(TAG, "=== LLM Analysis Started ===")
         Log.d(TAG, "  - Text length: ${input.length} chars")
         Log.d(TAG, "  - Context provided: ${llmContext != null}")
-        
+
         if (!isAvailable()) {
             Log.w(TAG, "LLM not available (isInitialized=$isInitialized, ortSession=${ortSession != null}), skipping analysis")
             return@withContext null
@@ -652,7 +651,7 @@ $text
             val jsonString = response.substring(jsonStart, jsonEnd + 1)
             Log.d(TAG, "  - Extracted JSON length: ${jsonString.length}")
             Log.v(TAG, "  - JSON content: $jsonString")
-            
+
             val llmResult = gson.fromJson(jsonString, LLMResponse::class.java)
             Log.d(TAG, "  - Parsed LLM result: isScam=${llmResult.isScam}, confidence=${llmResult.confidence}")
 
