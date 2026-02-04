@@ -146,21 +146,24 @@ class SmolLmTokenizer @Inject constructor(
     fun decode(ids: LongArray): String {
         if (ids.isEmpty()) return ""
 
-        val skipIds = buildSet {
+        // Kotlin stdlib 버전 문제로 mapNotNull 타입 추론이 깨질 수 있어
+        // 명시적인 for-loop로 토큰 리스트를 구성한다.
+        val skipIds = mutableSetOf<Int>().apply {
             add(unkTokenId)
             bosTokenId?.let { add(it) }
             eosTokenId?.let { add(it) }
         }
 
-        val tokens = ids
-            .mapNotNull { id ->
-                val intId = id.toInt()
-                if (intId in idToToken.indices && intId !in skipIds) {
-                    idToToken[intId]
-                } else {
-                    null
+        val tokens = mutableListOf<String>()
+        for (id in ids) {
+            val intId = id.toInt()
+            if (intId in idToToken.indices && intId !in skipIds) {
+                val token = idToToken[intId]
+                if (token.isNotEmpty()) {
+                    tokens.add(token)
                 }
             }
+        }
 
         val text = tokens.joinToString(" ")
         Log.d(TAG, "Decoded ids: ${ids.toList()}")

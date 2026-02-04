@@ -271,14 +271,14 @@ class LLMScamDetector @Inject constructor(
      * @param context Rule/URL 기반 1차 분석 결과 등 추가 컨텍스트 (선택)
      * @return [ScamAnalysis] 분석 결과. 모델 미사용/빈 응답/파싱 실패 시 null
      */
-    suspend fun analyze(text: String, context: LlmContext? = null): ScamAnalysis? = withContext(Dispatchers.Default) {
+    suspend fun analyze(text: String, llmContext: LlmContext? = null): ScamAnalysis? = withContext(Dispatchers.Default) {
         val input = if (text.length > MAX_INPUT_CHARS) {
             Log.d(TAG, "Input truncated for LLM: ${text.length} -> $MAX_INPUT_CHARS chars")
             text.take(MAX_INPUT_CHARS)
         } else text
         Log.d(TAG, "=== LLM Analysis Started ===")
         Log.d(TAG, "  - Text length: ${input.length} chars")
-        Log.d(TAG, "  - Context provided: ${context != null}")
+        Log.d(TAG, "  - Context provided: ${llmContext != null}")
         
         if (!isAvailable()) {
             Log.w(TAG, "LLM not available (isInitialized=$isInitialized, ortSession=${ortSession != null}), skipping analysis")
@@ -287,12 +287,12 @@ class LLMScamDetector @Inject constructor(
 
         try {
             Log.d(TAG, "Building prompt...")
-            val prompt = buildPrompt(input, context)
+            val prompt = buildPrompt(input, llmContext)
             Log.d(TAG, "  - Prompt length: ${prompt.length} chars")
             Log.v(TAG, "  - Prompt preview: ${prompt.take(200)}...")
 
             // 1단계: 토크나이저를 통해 프롬프트를 토큰 ID로 변환
-            val tokenizer = SmolLmTokenizer(context)
+            val tokenizer = SmolLmTokenizer(this@LLMScamDetector.context)
             val promptIds = tokenizer.encode(prompt, addBosEos = true)
             Log.d(TAG, "Encoded prompt to token ids (SmolLM2)")
             Log.d(TAG, "  - Token count: ${promptIds.size}")
@@ -351,27 +351,27 @@ class LLMScamDetector @Inject constructor(
 
                 Log.d(TAG, "Running ONNX session for 1-step generation...")
 
-                val nextTokenId: Int
-                val nextTokenText: String
+                var nextTokenId: Int? = null
+                var nextTokenText: String = ""
 
                 session.run(inputs).use { results ->
                     val logitsTensor = results.get("logits") as? OnnxTensor
                     if (logitsTensor == null) {
                         Log.e(TAG, "ONNX output 'logits' is null or missing")
-                        return@withContext null
+                        return@use
                     }
 
                     @Suppress("UNCHECKED_CAST")
                     val logitsArray = logitsTensor.value as Array<Array<FloatArray>>
                     if (logitsArray.isEmpty() || logitsArray[0].isEmpty()) {
                         Log.e(TAG, "ONNX logits tensor is empty")
-                        return@withContext null
+                        return@use
                     }
 
                     val lastLogits = logitsArray[0][logitsArray[0].size - 1]
                     if (lastLogits.isEmpty()) {
                         Log.e(TAG, "Last logits array is empty")
-                        return@withContext null
+                        return@use
                     }
 
                     // greedy argmax
@@ -385,11 +385,16 @@ class LLMScamDetector @Inject constructor(
                         }
                     }
                     nextTokenId = maxIdx
-                    nextTokenText = tokenizer.decode(longArrayOf(nextTokenId.toLong()))
+                    nextTokenText = tokenizer.decode(longArrayOf(nextTokenId!!.toLong()))
 
                     Log.d(TAG, "ONNX 1-step generation finished")
                     Log.d(TAG, "  - nextTokenId: $nextTokenId")
                     Log.d(TAG, "  - nextTokenText: \"$nextTokenText\"")
+                }
+
+                if (nextTokenId == null) {
+                    Log.e(TAG, "Failed to obtain next token from ONNX logits")
+                    return@withContext null
                 }
 
                 Log.d(TAG, "Generating LLM response (SIMULATED JSON, USING ONNX TOKEN)...")
@@ -397,22 +402,22 @@ class LLMScamDetector @Inject constructor(
                 // 현재는 개발 단계이므로, Rule/URL 컨텍스트 + ONNX에서 선택한 토큰 정보를
                 // 합쳐서 LLM 응답 JSON을 임시로 생성하여 전체 파이프라인(알림 표시)을 검증한다.
 
-                val baseConfidence = (context?.ruleConfidence ?: 0.5f).coerceIn(0f, 1f)
+                val baseConfidence = (llmContext?.ruleConfidence ?: 0.5f).coerceIn(0f, 1f)
                 val isScam = baseConfidence > 0.5f
                 val scamType = when {
-                    context?.ruleReasons?.any { it.contains("투자") || it.contains("수익") || it.contains("코인") || it.contains("주식") } == true ->
+                    llmContext?.ruleReasons?.any { it.contains("투자") || it.contains("수익") || it.contains("코인") || it.contains("주식") } == true ->
                         "투자사기"
-                    context?.ruleReasons?.any { it.contains("중고") || it.contains("입금") || it.contains("선결제") || it.contains("거래") } == true ->
+                    llmContext?.ruleReasons?.any { it.contains("중고") || it.contains("입금") || it.contains("선결제") || it.contains("거래") } == true ->
                         "중고거래사기"
-                    context?.urls?.isNotEmpty() == true || context?.suspiciousUrls?.isNotEmpty() == true ->
+                    llmContext?.urls?.isNotEmpty() == true || llmContext?.suspiciousUrls?.isNotEmpty() == true ->
                         "피싱"
                     else -> if (isScam) "사기" else "정상"
                 }
 
                 val reasons = buildList {
-                    addAll(context?.ruleReasons?.take(5) ?: emptyList())
-                    if (context?.suspiciousUrls?.isNotEmpty() == true) {
-                        add("의심 URL 포함: ${context.suspiciousUrls.take(3).joinToString()}")
+                    addAll(llmContext?.ruleReasons?.take(5) ?: emptyList())
+                    if (llmContext?.suspiciousUrls?.isNotEmpty() == true) {
+                        add("의심 URL 포함: ${llmContext.suspiciousUrls.take(3).joinToString()}")
                     }
                     if (nextTokenText.isNotBlank()) {
                         add("ONNX LLM이 생성한 토큰: \"$nextTokenText\" (id=$nextTokenId)")
@@ -422,9 +427,9 @@ class LLMScamDetector @Inject constructor(
                 }
 
                 val suspiciousParts = buildList {
-                    addAll(context?.detectedKeywords?.take(3) ?: emptyList())
-                    if (context?.suspiciousUrls?.isNotEmpty() == true) {
-                        addAll(context.suspiciousUrls.take(2))
+                    addAll(llmContext?.detectedKeywords?.take(3) ?: emptyList())
+                    if (llmContext?.suspiciousUrls?.isNotEmpty() == true) {
+                        addAll(llmContext.suspiciousUrls.take(2))
                     }
                     if (nextTokenText.isNotBlank()) {
                         add(nextTokenText)
@@ -501,45 +506,45 @@ class LLMScamDetector @Inject constructor(
      * 스캠 탐지용 시스템 프롬프트와 사용자 메시지를 조합한 프롬프트를 생성한다.
      *
      * @param text 분석 대상 채팅 메시지
-     * @param context Rule 기반·URL 분석 등 추가 컨텍스트
+     * @param llmContext Rule 기반·URL 분석 등 추가 컨텍스트
      * @return JSON만 출력하도록 지시한 프롬프트 문자열
      */
-    private fun buildPrompt(text: String, context: LlmContext?): String {
+    private fun buildPrompt(text: String, llmContext: LlmContext?): String {
         val maxListItems = 8
         val contextBlock = buildString {
-            if (context == null) return@buildString
+            if (llmContext == null) return@buildString
 
-            if (context.ruleConfidence != null || context.ruleReasons.isNotEmpty() || context.detectedKeywords.isNotEmpty()) {
+            if (llmContext.ruleConfidence != null || llmContext.ruleReasons.isNotEmpty() || llmContext.detectedKeywords.isNotEmpty()) {
                 appendLine("[Rule-based 1차 분석 요약]")
-                context.ruleConfidence?.let {
+                llmContext.ruleConfidence?.let {
                     appendLine("- rule_confidence: $it")
                 }
-                if (context.detectedKeywords.isNotEmpty()) {
-                    val kw = context.detectedKeywords.take(maxListItems)
+                if (llmContext.detectedKeywords.isNotEmpty()) {
+                    val kw = llmContext.detectedKeywords.take(maxListItems)
                     appendLine("- detected_keywords: ${kw.joinToString()}")
                 }
-                if (context.ruleReasons.isNotEmpty()) {
+                if (llmContext.ruleReasons.isNotEmpty()) {
                     appendLine("- rule_reasons:")
-                    context.ruleReasons.take(maxListItems).forEach { reason ->
+                    llmContext.ruleReasons.take(maxListItems).forEach { reason ->
                         appendLine("  - $reason")
                     }
                 }
                 appendLine()
             }
 
-            if (context.urls.isNotEmpty() || context.suspiciousUrls.isNotEmpty() || context.urlReasons.isNotEmpty()) {
+            if (llmContext.urls.isNotEmpty() || llmContext.suspiciousUrls.isNotEmpty() || llmContext.urlReasons.isNotEmpty()) {
                 appendLine("[URL/DB 기반 분석 요약]")
-                if (context.urls.isNotEmpty()) {
-                    val urls = context.urls.take(maxListItems)
+                if (llmContext.urls.isNotEmpty()) {
+                    val urls = llmContext.urls.take(maxListItems)
                     appendLine("- urls: ${urls.joinToString()}")
                 }
-                if (context.suspiciousUrls.isNotEmpty()) {
-                    val sus = context.suspiciousUrls.take(maxListItems)
+                if (llmContext.suspiciousUrls.isNotEmpty()) {
+                    val sus = llmContext.suspiciousUrls.take(maxListItems)
                     appendLine("- suspicious_urls: ${sus.joinToString()}")
                 }
-                if (context.urlReasons.isNotEmpty()) {
+                if (llmContext.urlReasons.isNotEmpty()) {
                     appendLine("- url_reasons:")
-                    context.urlReasons.take(maxListItems).forEach { reason ->
+                    llmContext.urlReasons.take(maxListItems).forEach { reason ->
                         appendLine("  - $reason")
                     }
                 }
