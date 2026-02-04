@@ -16,6 +16,9 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.nio.ShortBuffer
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -341,12 +344,20 @@ class LLMScamDetector @Inject constructor(
                     val keyName = "past_key_values.$layer.key"
                     val valueName = "past_key_values.$layer.value"
 
-                    // FLOAT16 텐서는 ShortArray로 생성 (0으로 초기화)
-                    val zeroKey = ShortArray(pastSize) { 0 }
-                    val zeroValue = ShortArray(pastSize) { 0 }
+                    // FLOAT16 텐서는 ShortBuffer 기반 텐서로 생성 (0으로 초기화)
+                    fun createZeroFloat16Tensor(): OnnxTensor {
+                        val byteBuffer: ByteBuffer = ByteBuffer.allocateDirect(2 * pastSize)
+                            .order(ByteOrder.nativeOrder())
+                        val shortBuffer: ShortBuffer = byteBuffer.asShortBuffer()
+                        for (i in 0 until pastSize) {
+                            shortBuffer.put(0.toShort())
+                        }
+                        shortBuffer.rewind()
+                        return OnnxTensor.createTensor(env, shortBuffer, pastShape)
+                    }
 
-                    inputs[keyName] = OnnxTensor.createTensor(env, zeroKey, pastShape)
-                    inputs[valueName] = OnnxTensor.createTensor(env, zeroValue, pastShape)
+                    inputs[keyName] = createZeroFloat16Tensor()
+                    inputs[valueName] = createZeroFloat16Tensor()
                 }
 
                 Log.d(TAG, "Running ONNX session for 1-step generation...")
