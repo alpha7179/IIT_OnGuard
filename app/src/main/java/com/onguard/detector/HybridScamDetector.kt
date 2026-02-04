@@ -130,40 +130,59 @@ class HybridScamDetector @Inject constructor(
             }
         }
 
-        // 7. LLM 분석 (애매한 경우에만)
-        if (useLLM && llmScamDetector.isAvailable() &&
-            ruleConfidence in LLM_TRIGGER_LOW..LLM_TRIGGER_HIGH
-        ) {
-            Log.d(TAG, "Triggering LLM analysis for confidence: $ruleConfidence")
+        // 7. LLM 분석 (애매한 경우에만, 그리고 그 시점에 지연 초기화 시도)
+        if (useLLM && ruleConfidence in LLM_TRIGGER_LOW..LLM_TRIGGER_HIGH) {
+            Log.d(TAG, "LLM candidate range, confidence=$ruleConfidence (will try lazy init if needed)")
 
-            val llmContext = LLMScamDetector.LlmContext(
-                ruleConfidence = ruleConfidence,
-                ruleReasons = combinedReasons,
-                detectedKeywords = keywordResult.detectedKeywords,
-                urls = urlResult.urls,
-                suspiciousUrls = urlResult.suspiciousUrls,
-                urlReasons = urlResult.reasons
-            )
+            // 아직 초기화 안 되어 있으면, 이 시점에서 한 번만 초기화 시도
+            if (!llmScamDetector.isAvailable()) {
+                Log.d(TAG, "LLM not initialized yet. Trying lazy initialization...")
+                try {
+                    val initSuccess = llmScamDetector.initialize()
+                    Log.d(
+                        TAG,
+                        "Lazy LLM initialization result: success=$initSuccess, available=${llmScamDetector.isAvailable()}"
+                    )
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error during lazy LLM initialization", e)
+                }
+            }
 
-            val llmResult = llmScamDetector.analyze(text, llmContext)
+            // 초기화 이후에도 사용 불가하면 LLM 분석은 건너뛴다
+            if (!llmScamDetector.isAvailable()) {
+                Log.w(TAG, "LLM still not available after lazy init. Falling back to rule-based result.")
+            } else {
+                Log.d(TAG, "Triggering LLM analysis for confidence: $ruleConfidence")
 
-            Log.d(
-                TAG,
-                "LLM result: " +
-                    if (llmResult == null) "null" else
-                        "isScam=${llmResult.isScam}, " +
-                        "confidence=${llmResult.confidence}, " +
-                        "scamType=${llmResult.scamType}, " +
-                        "reasons=${llmResult.reasons.joinToString(limit = 3)}"
-            )
-
-            if (llmResult != null) {
-                return combineResults(
+                val llmContext = LLMScamDetector.LlmContext(
                     ruleConfidence = ruleConfidence,
                     ruleReasons = combinedReasons,
                     detectedKeywords = keywordResult.detectedKeywords,
-                    llmResult = llmResult
+                    urls = urlResult.urls,
+                    suspiciousUrls = urlResult.suspiciousUrls,
+                    urlReasons = urlResult.reasons
                 )
+
+                val llmResult = llmScamDetector.analyze(text, llmContext)
+
+                Log.d(
+                    TAG,
+                    "LLM result: " +
+                        if (llmResult == null) "null" else
+                            "isScam=${llmResult.isScam}, " +
+                            "confidence=${llmResult.confidence}, " +
+                            "scamType=${llmResult.scamType}, " +
+                            "reasons=${llmResult.reasons.joinToString(limit = 3)}"
+                )
+
+                if (llmResult != null) {
+                    return combineResults(
+                        ruleConfidence = ruleConfidence,
+                        ruleReasons = combinedReasons,
+                        detectedKeywords = keywordResult.detectedKeywords,
+                        llmResult = llmResult
+                    )
+                }
             }
         }
 
