@@ -1,6 +1,8 @@
 package com.onguard.detector
 
+import android.app.ActivityManager
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import com.onguard.domain.model.DetectionMethod
 import com.onguard.domain.model.ScamAnalysis
@@ -38,7 +40,7 @@ class LLMScamDetector @Inject constructor(
     companion object {
         private const val TAG = "LLMScamDetector"
         /** assets 내 ONNX 모델 상대 경로 (경량 LLM) */
-        private const val MODEL_PATH = "models/model_q4f16.onnx"
+        private const val MODEL_PATH = "models/model_q4_int8.onnx"
         /** LLM 입력 길이 상한 (문자 수 기준, 토큰/메모리 절감) */
         private const val MAX_INPUT_CHARS = 1500
     }
@@ -91,6 +93,32 @@ class LLMScamDetector @Inject constructor(
             val modelFile = File(context.filesDir, MODEL_PATH)
             Log.d(TAG, "Target model file path: ${modelFile.absolutePath}")
             Log.d(TAG, "Model file parent exists: ${modelFile.parentFile?.exists()}")
+
+            // 디바이스·메모리 정보 로깅 및 저사양 기기 가드
+            val runtime = Runtime.getRuntime()
+            val maxMemMb = runtime.maxMemory() / 1_000_000
+            val modelName = Build.MODEL ?: "unknown"
+            val manufacturer = Build.MANUFACTURER ?: "unknown"
+            val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+            val memoryClassMb = activityManager?.memoryClass
+            val largeMemoryClassMb = activityManager?.largeMemoryClass
+
+            Log.d(TAG, "Device info for LLM init:")
+            Log.d(TAG, "  - Manufacturer: $manufacturer")
+            Log.d(TAG, "  - Model: $modelName")
+            Log.d(TAG, "  - maxMemory (Runtime): ${maxMemMb}MB")
+            Log.d(TAG, "  - memoryClass: ${memoryClassMb ?: -1}MB, largeMemoryClass: ${largeMemoryClassMb ?: -1}MB")
+
+            // 휴대폰 전체 메모리/앱 heap 상한을 보고, LLM을 올리기엔 너무 작은 경우
+            // 세션 생성을 아예 시도하지 않고 Rule-based만 사용한다.
+            // 기준은 보수적으로 잡아서, maxMemory < 1500MB 이거나
+            // 일반 heap(memoryClass) < 256MB 인 경우는 LLM을 건너뛴다.
+            val isVeryLowMaxMemory = maxMemMb in 0..1499
+            val isVerySmallHeap = (memoryClassMb != null && memoryClassMb < 256)
+            if (isVeryLowMaxMemory || isVerySmallHeap) {
+                Log.w(TAG, "Device memory is too low for ONNX LLM (maxMem=${maxMemMb}MB, memoryClass=${memoryClassMb}MB). Skipping LLM initialization and using rule-based detection only.")
+                return@withContext false
+            }
 
             // assets에서 모델 파일 확인 및 복사
             val assetPath = MODEL_PATH
@@ -189,7 +217,13 @@ class LLMScamDetector @Inject constructor(
 
             try {
                 val env = OrtEnvironment.getEnvironment()
-                val sessionOptions = OrtSession.SessionOptions()
+                val sessionOptions = OrtSession.SessionOptions().apply {
+                    // S10e 등 저사양 디바이스 대응: 스레드 수 최소화, 순차 실행, 세션 전용 스레드 풀 비활성화
+                    setIntraOpNumThreads(1)
+                    setInterOpNumThreads(1)
+                    setExecutionMode(OrtSession.SessionOptions.ExecutionMode.SEQUENTIAL)
+                    setUsePerSessionThreads(false)
+                }
                 val session = env.createSession(modelFile.absolutePath, sessionOptions)
 
                 // 입출력 메타데이터 로깅 (모델 구조 파악용)
