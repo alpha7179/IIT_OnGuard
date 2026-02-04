@@ -290,32 +290,64 @@ class LLMScamDetector @Inject constructor(
             Log.d(TAG, "  - Prompt length: ${prompt.length} chars")
             Log.v(TAG, "  - Prompt preview: ${prompt.take(200)}...")
             
-            Log.d(TAG, "Generating LLM response via ONNX Runtime...")
+            Log.d(TAG, "Generating LLM response (SIMULATED, ONNX TODO)...")
 
             // TODO: SmolLM2 ONNX 모델의 입력/출력 시그니처에 맞게
             // 토크나이저 및 디코딩 루프를 구현해야 한다.
-            // 현재는 안전을 위해 실제 ONNX 호출은 생략하고, Rule-only로 폴백한다.
+            // 현재는 개발 단계이므로, Rule/URL 컨텍스트를 기반으로
+            // LLM 응답 JSON을 임시로 생성하여 전체 파이프라인(알림 표시)을 검증한다.
 
-            Log.w(TAG, "ONNX LLM inference is not yet implemented. Falling back to rule-based result.")
-            return@withContext null
+            val baseConfidence = (context?.ruleConfidence ?: 0.5f).coerceIn(0f, 1f)
+            val isScam = baseConfidence > 0.5f
+            val scamType = when {
+                context?.ruleReasons?.any { it.contains("투자") || it.contains("수익") || it.contains("코인") || it.contains("주식") } == true ->
+                    "투자사기"
+                context?.ruleReasons?.any { it.contains("중고") || it.contains("입금") || it.contains("선결제") || it.contains("거래") } == true ->
+                    "중고거래사기"
+                context?.urls?.isNotEmpty() == true || context?.suspiciousUrls?.isNotEmpty() == true ->
+                    "피싱"
+                else -> if (isScam) "사기" else "정상"
+            }
 
-            // 예시: 나중에 구현할 때는 대략 아래 흐름이 될 것임
-            // val env = ortEnv ?: return@withContext null
-            // val session = ortSession ?: return@withContext null
-            // val inputs: Map<String, OnnxTensor> = ...
-            // val results = session.run(inputs)
-            // val rawOutput = ...
-            // val response = decodeToText(rawOutput)
-            //
-            // Log.d(TAG, "LLM response received: ${response.length} chars")
-            // Log.v(TAG, "  - Response preview: ${response.take(200)}...")
-            //
-            // val result = parseResponse(response)
+            val reasons = buildList {
+                addAll(context?.ruleReasons?.take(5) ?: emptyList())
+                if (context?.suspiciousUrls?.isNotEmpty() == true) {
+                    add("의심 URL 포함: ${context.suspiciousUrls.take(3).joinToString()}")
+                }
+            }
+
+            val suspiciousParts = buildList {
+                addAll(context?.detectedKeywords?.take(3) ?: emptyList())
+                if (context?.suspiciousUrls?.isNotEmpty() == true) {
+                    addAll(context.suspiciousUrls.take(2))
+                }
+            }
+
+            val warningMessage = if (isScam) {
+                "이 대화는 ${scamType} 유형으로 강하게 의심됩니다 (LLM 시뮬레이션 결과). 상대방의 요청을 바로 따르지 말고 한 번 더 확인하세요."
+            } else {
+                "현재까지는 뚜렷한 사기 패턴이 감지되지 않았습니다 (LLM 시뮬레이션 결과). 그래도 링크 클릭이나 송금 전에는 항상 주의하세요."
+            }
+
+            val simulatedJson = """
+                {
+                  "isScam": $isScam,
+                  "confidence": $baseConfidence,
+                  "scamType": "$scamType",
+                  "warningMessage": "$warningMessage",
+                  "reasons": ${gson.toJson(reasons)},
+                  "suspiciousParts": ${gson.toJson(suspiciousParts)}
+                }
+            """.trimIndent()
+
+            Log.d(TAG, "Simulated LLM JSON: $simulatedJson")
+
+            val result = parseResponse(simulatedJson)
             
             if (result == null) {
-                Log.w(TAG, "Failed to parse LLM response")
+                Log.w(TAG, "Failed to parse simulated LLM response")
             } else {
-                Log.d(TAG, "=== LLM Analysis Success ===")
+                Log.d(TAG, "=== LLM Analysis Success (SIMULATED) ===")
                 Log.d(TAG, "  - isScam: ${result.isScam}")
                 Log.d(TAG, "  - confidence: ${result.confidence}")
                 Log.d(TAG, "  - scamType: ${result.scamType}")
