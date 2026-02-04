@@ -12,6 +12,7 @@ import com.google.gson.annotations.SerializedName
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import ai.onnxruntime.NodeInfo
+import ai.onnxruntime.OnnxJavaType // [수정] Float16 명시를 위해 추가
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.TensorInfo
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -95,28 +96,33 @@ class LLMScamDetector @Inject constructor(
             Log.d(TAG, "Model file parent exists: ${modelFile.parentFile?.exists()}")
 
             // 디바이스·메모리 정보 로깅 및 저사양 기기 가드
-            val runtime = Runtime.getRuntime()
-            val maxMemMb = runtime.maxMemory() / 1_000_000
-            val modelName = Build.MODEL ?: "unknown"
-            val manufacturer = Build.MANUFACTURER ?: "unknown"
+            // [수정] Runtime.maxMemory()는 앱 힙 한도이므로 기기 스펙 확인엔 부적합.
+            // ActivityManager를 통해 실제 기기 RAM 용량을 확인하도록 수정함.
             val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+            val memInfo = ActivityManager.MemoryInfo()
+            activityManager?.getMemoryInfo(memInfo)
+
+            val totalRamMb = memInfo.totalMem / (1024 * 1024) // 전체 RAM (MB)
             val memoryClassMb = activityManager?.memoryClass
             val largeMemoryClassMb = activityManager?.largeMemoryClass
+
+            val modelName = Build.MODEL ?: "unknown"
+            val manufacturer = Build.MANUFACTURER ?: "unknown"
 
             Log.d(TAG, "Device info for LLM init:")
             Log.d(TAG, "  - Manufacturer: $manufacturer")
             Log.d(TAG, "  - Model: $modelName")
-            Log.d(TAG, "  - maxMemory (Runtime): ${maxMemMb}MB")
-            Log.d(TAG, "  - memoryClass: ${memoryClassMb ?: -1}MB, largeMemoryClass: ${largeMemoryClassMb ?: -1}MB")
+            Log.d(TAG, "  - Total RAM: ${totalRamMb}MB") // 실제 램 용량
+            Log.d(TAG, "  - App Heap Limit: ${memoryClassMb ?: -1}MB (Large: ${largeMemoryClassMb ?: -1}MB)")
 
-            // 휴대폰 전체 메모리/앱 heap 상한을 보고, LLM을 올리기엔 너무 작은 경우
-            // 세션 생성을 아예 시도하지 않고 Rule-based만 사용한다.
-            // 기준은 보수적으로 잡아서, maxMemory < 1500MB 이거나
-            // 일반 heap(memoryClass) < 256MB 인 경우는 LLM을 건너뛴다.
-            val isVeryLowMaxMemory = maxMemMb in 0..1499
+            // 휴대폰 전체 메모리(RAM)를 기준으로 판단.
+            // 3GB(3000MB) 미만인 경우 LLM 구동이 어려우므로 건너뜀.
+            // 또한 일반 heap(memoryClass) < 256MB 인 경우도 안전을 위해 건너뜀.
+            val isLowRamDevice = totalRamMb < 3000
             val isVerySmallHeap = (memoryClassMb != null && memoryClassMb < 256)
-            if (isVeryLowMaxMemory || isVerySmallHeap) {
-                Log.w(TAG, "Device memory is too low for ONNX LLM (maxMem=${maxMemMb}MB, memoryClass=${memoryClassMb}MB). Skipping LLM initialization and using rule-based detection only.")
+
+            if (isLowRamDevice || isVerySmallHeap) {
+                Log.w(TAG, "Device capability too low for ONNX LLM (RAM=${totalRamMb}MB, Heap=${memoryClassMb}MB). Skipping LLM initialization and using rule-based detection only.")
                 return@withContext false
             }
 
@@ -386,7 +392,8 @@ class LLMScamDetector @Inject constructor(
                             shortBuffer.put(0.toShort())
                         }
                         shortBuffer.rewind()
-                        return OnnxTensor.createTensor(env, shortBuffer, pastShape)
+                        // [수정] OnnxJavaType.FLOAT16을 지정하여 ShortBuffer가 Int16이 아닌 Float16임을 명시
+                        return OnnxTensor.createTensor(env, shortBuffer, pastShape, OnnxJavaType.FLOAT16)
                     }
 
                     inputs[keyName] = createZeroFloat16Tensor()
