@@ -19,7 +19,7 @@ import javax.inject.Singleton
 /**
  * LLM 기반 스캠 탐지기.
  *
- * MediaPipe LLM Inference API와 Gemma 3 270M(4bit 양자화) 모델을 사용하여
+ * MediaPipe LLM Inference API와 Gemma 3 270M(양자화 .task) 모델을 사용하여
  * 채팅 메시지를 분석하고, 스캠 여부·신뢰도·경고 메시지·의심 문구를 생성한다.
  * 모델 파일이 없거나 초기화 실패 시 [analyze]는 null을 반환하며, Rule-based만 사용된다.
  *
@@ -66,6 +66,8 @@ class LLMScamDetector @Inject constructor(
     private var llmInference: LlmInference? = null
     private val gson = Gson()
     private var isInitialized = false
+    /** 초기화를 한 번 시도했고 실패한 경우 true (재시도 방지) */
+    private var initializationAttempted = false
 
     /**
      * LLM 모델을 초기화한다.
@@ -82,9 +84,7 @@ class LLMScamDetector @Inject constructor(
             Log.d(TAG, "LLM already initialized, skipping")
             return@withContext true
         }
-        
-        // 크래시 방지를 위한 안전장치: 이미 초기화 실패한 경우 재시도 방지
-        if (::llmInference.isInitialized && llmInference == null) {
+        if (initializationAttempted) {
             Log.w(TAG, "Previous initialization failed, skipping retry to prevent crash")
             return@withContext false
         }
@@ -205,7 +205,9 @@ class LLMScamDetector @Inject constructor(
 
             // LLM 로드 직전 메모리 확보 (저사양 기기 대응)
             System.gc()
-            
+            // 한 번 실패한 뒤 재시도 방지 (크래시 루프 방지)
+            initializationAttempted = true
+
             // MediaPipe LLM 인스턴스 생성 (여기서 크래시 가능)
             Log.d(TAG, "=== Creating LlmInference Instance ===")
             Log.d(TAG, "  - Context: ${context.javaClass.simpleName}")
@@ -351,7 +353,7 @@ class LLMScamDetector @Inject constructor(
             Log.e(TAG, "  - Exception message: ${e.message}")
             Log.e(TAG, "  - Exception cause: ${e.cause}")
             Log.e(TAG, "  - Text length: ${text.length} chars")
-            Log.e(TAG, "  - LLM available: $isAvailable")
+            Log.e(TAG, "  - LLM available: ${isAvailable()}")
             e.printStackTrace()
             null
         } catch (e: Throwable) {
@@ -371,6 +373,7 @@ class LLMScamDetector @Inject constructor(
      * @return JSON만 출력하도록 지시한 프롬프트 문자열
      */
     private fun buildPrompt(text: String, context: LlmContext?): String {
+        val maxListItems = 8
         val contextBlock = buildString {
             if (context == null) return@buildString
 
@@ -380,11 +383,12 @@ class LLMScamDetector @Inject constructor(
                     appendLine("- rule_confidence: $it")
                 }
                 if (context.detectedKeywords.isNotEmpty()) {
-                    appendLine("- detected_keywords: ${context.detectedKeywords.joinToString()}")
+                    val kw = context.detectedKeywords.take(maxListItems)
+                    appendLine("- detected_keywords: ${kw.joinToString()}")
                 }
                 if (context.ruleReasons.isNotEmpty()) {
                     appendLine("- rule_reasons:")
-                    context.ruleReasons.forEach { reason ->
+                    context.ruleReasons.take(maxListItems).forEach { reason ->
                         appendLine("  - $reason")
                     }
                 }
@@ -394,14 +398,16 @@ class LLMScamDetector @Inject constructor(
             if (context.urls.isNotEmpty() || context.suspiciousUrls.isNotEmpty() || context.urlReasons.isNotEmpty()) {
                 appendLine("[URL/DB 기반 분석 요약]")
                 if (context.urls.isNotEmpty()) {
-                    appendLine("- urls: ${context.urls.joinToString()}")
+                    val urls = context.urls.take(maxListItems)
+                    appendLine("- urls: ${urls.joinToString()}")
                 }
                 if (context.suspiciousUrls.isNotEmpty()) {
-                    appendLine("- suspicious_urls: ${context.suspiciousUrls.joinToString()}")
+                    val sus = context.suspiciousUrls.take(maxListItems)
+                    appendLine("- suspicious_urls: ${sus.joinToString()}")
                 }
                 if (context.urlReasons.isNotEmpty()) {
                     appendLine("- url_reasons:")
-                    context.urlReasons.forEach { reason ->
+                    context.urlReasons.take(maxListItems).forEach { reason ->
                         appendLine("  - $reason")
                     }
                 }
@@ -471,12 +477,12 @@ $text
             ScamAnalysis(
                 isScam = llmResult.isScam,
                 confidence = llmResult.confidence.coerceIn(0f, 1f),
-                reasons = llmResult.reasons,
+                reasons = llmResult.reasons.orEmpty(),
                 detectedKeywords = emptyList(),
                 detectionMethod = DetectionMethod.LLM,
                 scamType = parseScamType(llmResult.scamType),
                 warningMessage = llmResult.warningMessage,
-                suspiciousParts = llmResult.suspiciousParts
+                suspiciousParts = llmResult.suspiciousParts.orEmpty()
             )
         } catch (e: Exception) {
             Log.e(TAG, "=== Failed to parse LLM response ===", e)
@@ -517,6 +523,7 @@ $text
         llmInference?.close()
         llmInference = null
         isInitialized = false
+        initializationAttempted = false
     }
 
     /**
@@ -543,9 +550,9 @@ $text
         val warningMessage: String = "",
 
         @SerializedName("reasons")
-        val reasons: List<String> = emptyList(),
+        val reasons: List<String>? = null,
 
         @SerializedName("suspiciousParts")
-        val suspiciousParts: List<String> = emptyList()
+        val suspiciousParts: List<String>? = null
     )
 }
