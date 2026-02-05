@@ -17,13 +17,13 @@ import kotlin.math.max
  * ## 탐지 흐름
  * 1. Rule-based 1차 필터 (키워드 + URL)
  * 2. 최근 대화 맥락(마지막 N줄)을 추출해 LLM 컨텍스트로 활용
- * 3. 신뢰도 0.25~0.8 구간이면서 금전/긴급/URL 신호가 있을 때만 LLM 추가 분석
+ * 3. 신뢰도 0.5~1.0 구간이면서 금전/긴급/URL 신호가 있을 때만 LLM 추가 분석
  * 4. 가중 평균(Rule 40%, LLM 60%)으로 최종 판정
  *
  * ## 임계값
  * - 0.7 초과: 고위험, 즉시 스캠 판정 (LLM 미호출)
  * - 0.4~0.7: 중위험, 조합 보너스 후 필요 시 LLM 호출
- * - 0.25~0.8: LLM 트리거 구간 (금전/긴급/URL 신호가 있을 때)
+ * - 0.5~1.0: LLM 트리거 구간 (금전/긴급/URL 신호가 있을 때)
  * - 0.5 초과: 최종 스캠 판정
  *
  * @param keywordMatcher 키워드 기반 규칙 탐지기
@@ -47,9 +47,9 @@ class HybridScamDetector @Inject constructor(
         private const val MEDIUM_CONFIDENCE_THRESHOLD = 0.4f
         private const val LOW_CONFIDENCE_THRESHOLD = 0.25f
 
-        // LLM 분석 조건: Rule-based 결과가 애매한 경우(0.25~0.8) + 금전/긴급/URL 신호 존재
-        private const val LLM_TRIGGER_LOW = 0.25f
-        private const val LLM_TRIGGER_HIGH = 0.8f
+        // LLM 분석 조건: Rule-based 결과가 애매한 경우(0.5~1.0) + 금전/긴급/URL 신호 존재
+        private const val LLM_TRIGGER_LOW = 0.5f
+        private const val LLM_TRIGGER_HIGH = 1.0f
 
         // 가중치
         private const val RULE_WEIGHT = 0.4f
@@ -98,18 +98,7 @@ class HybridScamDetector @Inject constructor(
             "step=rule_result ruleConfidence=$ruleConfidence keywordReasons=${keywordResult.reasons.size} urlReasons=${urlResult.reasons.size} suspiciousUrlCount=${urlResult.suspiciousUrls.size}"
         }
 
-        // 5. Early return for very high confidence (명확한 스캠)
-        if (ruleConfidence > HIGH_CONFIDENCE_THRESHOLD) {
-            DebugLog.debugLog(TAG) { "step=early_return ruleOnly=true confidence=$ruleConfidence" }
-            return createRuleBasedResult(
-                ruleConfidence,
-                combinedReasons,
-                keywordResult.detectedKeywords,
-                urlResult.suspiciousUrls.isNotEmpty()
-            )
-        }
-
-        // 6. Additional combination checks for medium confidence
+        // 5. Additional combination checks for medium confidence
         if (ruleConfidence > MEDIUM_CONFIDENCE_THRESHOLD) {
             val hasUrgency = text.contains("긴급", ignoreCase = true) ||
                     text.contains("급하", ignoreCase = true) ||
