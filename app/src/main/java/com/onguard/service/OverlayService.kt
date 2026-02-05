@@ -70,19 +70,32 @@ class OverlayService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        Log.d(TAG, "=== OverlayService.onCreate ===")
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        Log.d(TAG, "  - WindowManager obtained: ${windowManager != null}")
         createNotificationChannel()
+        Log.d(TAG, "OverlayService created successfully")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.d(TAG, "=== OverlayService.onStartCommand called ===")
+        Log.d(TAG, "  - Intent: ${intent != null}")
+        Log.d(TAG, "  - Flags: $flags")
+        Log.d(TAG, "  - StartId: $startId")
+        
         // 오버레이 권한 체크
-        if (!Settings.canDrawOverlays(this)) {
-            Log.e(TAG, "Overlay permission not granted - cannot show warning")
+        val hasOverlayPermission = Settings.canDrawOverlays(this)
+        Log.d(TAG, "  - Overlay permission: $hasOverlayPermission")
+        
+        if (!hasOverlayPermission) {
+            Log.e(TAG, "=== Overlay permission not granted - cannot show warning ===")
+            Log.e(TAG, "Please enable 'Display over other apps' permission in Settings")
             stopSelf()
             return START_NOT_STICKY
         }
 
         // Intent에서 데이터 추출
+        Log.d(TAG, "Extracting data from intent...")
         val confidence = intent?.getFloatExtra(EXTRA_CONFIDENCE, 0.5f) ?: 0.5f
         val reasonsRaw = intent?.getStringExtra(EXTRA_REASONS) ?: "스캠 의심"
         val sourceApp = intent?.getStringExtra(EXTRA_SOURCE_APP) ?: "Unknown"
@@ -90,6 +103,15 @@ class OverlayService : Service() {
         val scamTypeStr = intent?.getStringExtra(EXTRA_SCAM_TYPE) ?: "UNKNOWN"
         val suspiciousParts = intent?.getStringArrayListExtra(EXTRA_SUSPICIOUS_PARTS) ?: arrayListOf()
         val detectedKeywords = intent?.getStringArrayListExtra(EXTRA_DETECTED_KEYWORDS) ?: arrayListOf()
+        
+        Log.d(TAG, "Extracted data:")
+        Log.d(TAG, "  - Confidence: $confidence")
+        Log.d(TAG, "  - Reasons: $reasonsRaw")
+        Log.d(TAG, "  - Source app: $sourceApp")
+        Log.d(TAG, "  - Warning message: $warningMessage")
+        Log.d(TAG, "  - Scam type: $scamTypeStr")
+        Log.d(TAG, "  - Suspicious parts: $suspiciousParts")
+        Log.d(TAG, "  - Detected keywords: $detectedKeywords")
 
         // String을 List로 변환 (기존 호환성)
         val reasons = if (reasonsRaw.contains(",")) {
@@ -143,12 +165,34 @@ class OverlayService : Service() {
         scamType: ScamType,
         suspiciousParts: List<String>
     ) {
+        Log.d(TAG, "=== showOverlayWarning called ===")
+        Log.d(TAG, "  - Confidence: $confidence")
+        Log.d(TAG, "  - Reasons count: ${reasons.size}")
+        Log.d(TAG, "  - Source app: $sourceApp")
+        Log.d(TAG, "  - Warning message: $warningMessage")
+        Log.d(TAG, "  - Scam type: $scamType")
+        Log.d(TAG, "  - Suspicious parts: $suspiciousParts")
+        
         // Remove existing overlay if any
+        Log.d(TAG, "Removing existing overlay if any...")
         removeOverlay()
 
         // Create overlay view
+        Log.d(TAG, "Creating overlay view from layout...")
         val inflater = LayoutInflater.from(this)
-        overlayView = inflater.inflate(R.layout.overlay_scam_warning, null)
+        overlayView = try {
+            inflater.inflate(R.layout.overlay_scam_warning, null)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to inflate overlay layout", e)
+            null
+        }
+        
+        if (overlayView == null) {
+            Log.e(TAG, "Overlay view is null after inflation - cannot show warning")
+            return
+        }
+        
+        Log.d(TAG, "Overlay view created successfully")
 
         // 신뢰도별 배경색 (Material Design 색상)
         // - 90% 이상: 빨강 (#D32F2F) - 거의 확정적 스캠, 즉시 주의 필요
@@ -230,18 +274,64 @@ class OverlayService : Service() {
         }
 
         // Add view to window
+        Log.d(TAG, "Adding overlay view to WindowManager...")
+        Log.d(TAG, "  - WindowManager: ${windowManager != null}")
+        Log.d(TAG, "  - Overlay view: ${overlayView != null}")
+        Log.d(TAG, "  - Params width: ${params.width}, height: ${params.height}")
+        Log.d(TAG, "  - Params type: ${params.type}, flags: ${params.flags}")
+        
         try {
             windowManager?.addView(overlayView, params)
-            Log.d(TAG, "Overlay view added successfully")
+            Log.i(TAG, "=== Overlay view added successfully ===")
+            Log.i(TAG, "  - View should now be visible on screen")
+            
+            // 오버레이 뷰 상태 확인
+            overlayView?.let { view ->
+                view.post {
+                    Log.d(TAG, "=== Overlay view state check ===")
+                    Log.d(TAG, "  - Visibility: ${view.visibility}")
+                    Log.d(TAG, "  - Width: ${view.width}px")
+                    Log.d(TAG, "  - Height: ${view.height}px")
+                    Log.d(TAG, "  - Alpha: ${view.alpha}")
+                    Log.d(TAG, "  - Background: ${view.background != null}")
+                    Log.d(TAG, "  - X position: ${view.x}")
+                    Log.d(TAG, "  - Y position: ${view.y}")
+                    Log.d(TAG, "  - Is attached: ${view.isAttachedToWindow}")
+                    
+                    // 뷰의 실제 표시 여부 확인
+                    val isVisible = view.visibility == View.VISIBLE && 
+                                   view.width > 0 && 
+                                   view.height > 0 &&
+                                   view.alpha > 0f
+                    Log.i(TAG, "  - Is actually visible: $isVisible")
+                    
+                    if (!isVisible) {
+                        Log.w(TAG, "WARNING: Overlay view added but may not be visible!")
+                        Log.w(TAG, "  - Check overlay permission, view size, and position")
+                    }
+                }
+            }
 
             // Auto-dismiss after delay
             handler.postDelayed({
+                Log.d(TAG, "=== Auto-dismissing overlay after $AUTO_DISMISS_DELAY ms ===")
                 removeOverlay()
                 stopSelf()
             }, AUTO_DISMISS_DELAY)
 
+        } catch (e: SecurityException) {
+            Log.e(TAG, "=== SecurityException: Overlay permission issue ===", e)
+            Log.e(TAG, "  - Error: ${e.message}")
+            Log.e(TAG, "  - Please check 'Display over other apps' permission in Settings")
+            overlayView = null
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to add overlay view", e)
+            Log.e(TAG, "=== Failed to add overlay view ===", e)
+            Log.e(TAG, "  - Exception type: ${e.javaClass.name}")
+            Log.e(TAG, "  - Exception message: ${e.message}")
+            Log.e(TAG, "  - WindowManager: ${windowManager != null}")
+            Log.e(TAG, "  - Overlay view: ${overlayView != null}")
+            e.printStackTrace()
+            overlayView = null
         }
     }
 
@@ -338,14 +428,28 @@ class OverlayService : Service() {
     }
 
     private fun removeOverlay() {
-        overlayView?.let {
+        Log.d(TAG, "=== removeOverlay() called ===")
+        Log.d(TAG, "  - Overlay view exists: ${overlayView != null}")
+        
+        overlayView?.let { view ->
             try {
-                windowManager?.removeView(it)
+                Log.d(TAG, "  - Removing overlay view from WindowManager...")
+                Log.d(TAG, "  - View state before removal:")
+                Log.d(TAG, "    - Visibility: ${view.visibility}")
+                Log.d(TAG, "    - Width: ${view.width}px, Height: ${view.height}px")
+                Log.d(TAG, "    - Is attached: ${view.isAttachedToWindow}")
+                
+                windowManager?.removeView(view)
                 overlayView = null
-                Log.d(TAG, "Overlay view removed")
+                Log.i(TAG, "=== Overlay view removed successfully ===")
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to remove overlay view", e)
+                Log.e(TAG, "=== Failed to remove overlay view ===", e)
+                Log.e(TAG, "  - Exception type: ${e.javaClass.name}")
+                Log.e(TAG, "  - Exception message: ${e.message}")
+                e.printStackTrace()
             }
+        } ?: run {
+            Log.d(TAG, "  - No overlay view to remove")
         }
     }
 

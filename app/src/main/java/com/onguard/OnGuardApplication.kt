@@ -47,8 +47,9 @@ class OnGuardApplication : Application(), Configuration.Provider {
         super.onCreate()
         Log.i(TAG, "OnGuard Application started")
 
-        // LLM 모델 백그라운드 초기화 (Cold start 방지)
-        initializeLLMInBackground()
+        // LLM 모델은 이제 실제 분석 시점(하이브리드 탐지기)에서
+        // Rule-based 신뢰도가 애매한 경우에만 지연 초기화(lazy init)한다.
+        // => S10e 등에서 모델 로드 크래시가 나는지 구체적으로 관찰 가능.
 
         // WorkManager 초기화 및 주기적 업데이트 스케줄링
         initializeWorkManager()
@@ -58,21 +59,49 @@ class OnGuardApplication : Application(), Configuration.Provider {
      * LLM 모델을 백그라운드에서 초기화한다.
      *
      * 앱 시작 시 한 번 호출되며, 첫 스캠 탐지 시 지연을 줄이기 위해
-     * 미리 Gemma 모델을 로드한다. 실패 시 Rule-based 탐지만 사용된다.
+     * 미리 LLM(Qwen GGUF) 모델을 로드한다. 실패 시 Rule-based 탐지만 사용된다.
+     * 
+     * 크래시 방지: 네이티브 크래시가 발생해도 앱이 종료되지 않도록
+     * SupervisorJob과 별도 코루틴으로 격리한다.
      */
     private fun initializeLLMInBackground() {
-        applicationScope.launch {
+        // 별도 코루틴으로 격리하여 크래시가 앱 전체에 영향을 주지 않도록
+        val llmInitScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        
+        llmInitScope.launch {
             try {
-                Log.d(TAG, "Starting LLM initialization...")
+                Log.d(TAG, "=== Starting LLM initialization in background ===")
+                
+                // 앱 시작 안정화 + 다른 초기화(WorkManager 등) 완료 후 메모리 여유 확보
+                kotlinx.coroutines.delay(1500)
+                
+                // LLM 로드 전 가비지 컬렉션으로 사용 가능 메모리 확보 (저사양 기기 대응)
+                System.gc()
+                kotlinx.coroutines.delay(200)
+                
                 val success = hybridScamDetector.initializeLLM()
 
                 if (success) {
-                    Log.d(TAG, "LLM initialized successfully")
+                    Log.i(TAG, "=== LLM initialized successfully ===")
                 } else {
-                    Log.w(TAG, "LLM initialization failed - will use rule-based detection only")
+                    Log.w(TAG, "=== LLM initialization failed - will use rule-based detection only ===")
                 }
+            } catch (e: OutOfMemoryError) {
+                Log.e(TAG, "=== Out of Memory during LLM initialization ===", e)
+                Log.e(TAG, "LLM initialization skipped due to memory constraints")
+                // OutOfMemoryError는 앱을 종료시키지 않도록 처리
             } catch (e: Exception) {
-                Log.e(TAG, "Error during LLM initialization", e)
+                Log.e(TAG, "=== Exception during LLM initialization ===", e)
+                Log.e(TAG, "  - Exception type: ${e.javaClass.name}")
+                Log.e(TAG, "  - Exception message: ${e.message}")
+                e.printStackTrace()
+            } catch (e: Throwable) {
+                // 네이티브 크래시 등 치명적 오류도 잡아서 앱 종료 방지
+                Log.e(TAG, "=== Fatal error during LLM initialization ===", e)
+                Log.e(TAG, "  - Error type: ${e.javaClass.name}")
+                Log.e(TAG, "  - Error message: ${e.message}")
+                Log.e(TAG, "LLM initialization skipped - app will continue with rule-based detection")
+                e.printStackTrace()
             }
         }
     }

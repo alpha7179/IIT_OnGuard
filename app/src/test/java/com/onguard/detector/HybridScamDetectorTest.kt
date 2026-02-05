@@ -11,7 +11,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Ignore
 import org.junit.Test
-import com.onguard.detector.LLMScamDetector
+import com.onguard.detector.LLMScamAnalyzer
 
 // Note: This class uses UrlAnalyzer which depends on Android Patterns.
 // Run as instrumented tests for full coverage.
@@ -22,24 +22,23 @@ class HybridScamDetectorTest {
     private lateinit var keywordMatcher: KeywordMatcher
     private lateinit var urlAnalyzer: UrlAnalyzer
     private lateinit var mockPhishingUrlRepository: PhishingUrlRepository
-    private lateinit var mockLlmScamDetector: LLMScamDetector
+    private lateinit var mockLlmScamAnalyzer: LLMScamAnalyzer
 
     @Before
     fun setup() {
         mockPhishingUrlRepository = mockk<PhishingUrlRepository>(relaxed = true)
-        mockLlmScamDetector = mockk<LLMScamDetector>(relaxed = true)
+        mockLlmScamAnalyzer = mockk<LLMScamAnalyzer>(relaxed = true)
 
         coEvery { mockPhishingUrlRepository.isPhishingUrl(any()) } returns false
-        coEvery { mockLlmScamDetector.analyze(any()) } returns null
+        coEvery { mockLlmScamAnalyzer.analyze(any(), any()) } returns null
 
         keywordMatcher = KeywordMatcher()
         urlAnalyzer = UrlAnalyzer(mockPhishingUrlRepository)
 
-        // 3. 생성자에 mockLlmScamDetector 추가
         hybridScamDetector = HybridScamDetector(
             keywordMatcher,
             urlAnalyzer,
-            mockLlmScamDetector
+            mockLlmScamAnalyzer
         )
     }
 

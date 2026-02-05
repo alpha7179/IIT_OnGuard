@@ -1,16 +1,19 @@
 import java.util.Properties
 
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
+    id("com.android.application") version "8.13.2"
+    id("org.jetbrains.kotlin.android") version "2.0.21"
     id("org.jetbrains.kotlin.plugin.compose") version "2.0.21"
-    id("com.google.dagger.hilt.android")
-    id("com.google.devtools.ksp")
+    id("com.google.dagger.hilt.android") version "2.51.1"
+    id("com.google.devtools.ksp") version "2.0.21-1.0.27"
 }
 
 android {
     namespace = "com.onguard"
     compileSdk = 34
+
+    // java-llama.cpp 서브모듈 경로
+    val jllamaLib = file("java-llama.cpp")
 
     defaultConfig {
         applicationId = "com.onguard"
@@ -25,6 +28,11 @@ android {
             useSupportLibrary = true
         }
 
+        // 16KB page size compatibility (Android 15+)
+        ndk {
+            // TODO: llama.cpp 빌드시 16KB 페이지 크기 대응 플래그를 맞추는 것이 이상적
+        }
+
         // API Keys from local.properties
         val localPropertiesFile = rootProject.file("local.properties")
         val properties = Properties()
@@ -34,6 +42,14 @@ android {
 
         buildConfigField("String", "THECHEAT_API_KEY", "\"${properties.getProperty("THECHEAT_API_KEY", "")}\"")
         buildConfigField("String", "KISA_API_KEY", "\"${properties.getProperty("KISA_API_KEY", "")}\"")
+
+        externalNativeBuild {
+            cmake {
+                // java-llama.cpp C++ 빌드에 필요한 기본 설정
+                cppFlags += ""
+                arguments += listOf<String>()
+            }
+        }
     }
 
     buildTypes {
@@ -65,11 +81,26 @@ android {
         buildConfig = true
     }
 
-    // Compose compiler is now configured via the compose plugin
-
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+        jniLibs {
+            useLegacyPackaging = false
+        }
+    }
+
+    // java-llama.cpp CMake & Java 소스 연결
+    externalNativeBuild {
+        cmake {
+            path = file("$jllamaLib/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+
+    sourceSets {
+        getByName("main") {
+            java.srcDir("$jllamaLib/src/main/java")
         }
     }
 }
@@ -111,13 +142,10 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
 
-    // TensorFlow Lite
+    // TensorFlow Lite (기타 모델용으로 남겨둠)
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
     implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")
-
-    // MediaPipe LLM Inference API (Gemma 지원)
-    implementation("com.google.mediapipe:tasks-genai:0.10.14")
 
     // Gson
     implementation("com.google.code.gson:gson:2.10.1")
@@ -148,3 +176,4 @@ dependencies {
     implementation("androidx.savedstate:savedstate-ktx:1.2.1")
     implementation("androidx.activity:activity-compose:1.8.1")
 }
+
