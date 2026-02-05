@@ -178,6 +178,9 @@ class ScamDetectionAccessibilityService : AccessibilityService() {
         // Debouncing: 이전 작업 취소
         debounceJob?.cancel()
 
+        // event 객체는 나중에 재활용될 수 있으므로, 필요한 값은 먼저 복사해 둔다.
+        val sourceApp = event.packageName?.toString() ?: return
+
         debounceJob = serviceScope.launch {
             delay(DEBOUNCE_DELAY_MS)
 
@@ -209,8 +212,8 @@ class ScamDetectionAccessibilityService : AccessibilityService() {
                     "step=text_extracted length=${extractedText.length} masked=\"$masked\""
                 }
 
-                // 스캠 분석
-                analyzeForScam(extractedText, event.packageName.toString())
+                // 스캠 분석 (event 대신 사전에 복사한 sourceApp 사용)
+                analyzeForScam(extractedText, sourceApp)
 
             } catch (e: Exception) {
                 android.util.Log.e(TAG, "Error processing event", e)
