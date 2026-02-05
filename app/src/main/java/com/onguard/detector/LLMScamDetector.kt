@@ -1,5 +1,6 @@
 package com.onguard.detector
 
+import com.onguard.BuildConfig
 import com.onguard.domain.model.DetectionMethod
 import com.onguard.domain.model.ScamAnalysis
 import com.onguard.domain.model.ScamType
@@ -44,6 +45,11 @@ class LLMScamDetector @Inject constructor(
      * @return 성공 시 true, 모델 없음/예외 시 false
      */
     suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
+        if (!BuildConfig.ENABLE_LLM) {
+            DebugLog.warnLog(TAG) { "step=init skip reason=disabled" }
+            return@withContext false
+        }
+
         if (isInitialized) return@withContext true
 
         try {
@@ -67,7 +73,7 @@ class LLMScamDetector @Inject constructor(
      *
      * @return 초기화 완료 및 인스턴스 존재 시 true
      */
-    fun isAvailable(): Boolean = isInitialized
+    fun isAvailable(): Boolean = BuildConfig.ENABLE_LLM && isInitialized
 
     /**
      * 주어진 텍스트를 LLM으로 분석하여 스캠 여부와 상세 결과를 반환한다.

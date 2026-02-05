@@ -25,7 +25,7 @@ android {
             useSupportLibrary = true
         }
 
-        // API Keys from local.properties
+        // API Keys & feature flags from local.properties
         val localPropertiesFile = rootProject.file("local.properties")
         val properties = Properties()
         if (localPropertiesFile.exists()) {
@@ -34,6 +34,12 @@ android {
 
         buildConfigField("String", "THECHEAT_API_KEY", "\"${properties.getProperty("THECHEAT_API_KEY", "")}\"")
         buildConfigField("String", "KISA_API_KEY", "\"${properties.getProperty("KISA_API_KEY", "")}\"")
+
+        // Sherpa-ONNX LLM 사용 여부 플래그
+        // - local.properties에 ENABLE_LLM=true 를 설정하면 활성화된다.
+        // - 기본값은 false (안전 모드)
+        val enableLlm = properties.getProperty("ENABLE_LLM", "false")
+        buildConfigField("boolean", "ENABLE_LLM", enableLlm)
     }
 
     buildTypes {
@@ -111,9 +117,6 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
 
-    // Sherpa-ONNX (Android LLM)
-    implementation("com.k2fsa.sherpa.onnx:sherpa-onnx:1.10.16")
-
     // Gson
     implementation("com.google.code.gson:gson:2.10.1")
 
@@ -142,4 +145,11 @@ dependencies {
     implementation("androidx.compose.material3:material3:1.1.2")
     implementation("androidx.savedstate:savedstate-ktx:1.2.1")
     implementation("androidx.activity:activity-compose:1.8.1")
+
+    // Sherpa-ONNX: 로컬 AAR(optional)
+    // 프로젝트 루트 기준 app/libs/sherpa-onnx.aar 가 존재할 때만 의존성을 추가한다.
+    val sherpaOnnxAar = file("libs/sherpa-onnx.aar")
+    if (sherpaOnnxAar.exists()) {
+        implementation(files(sherpaOnnxAar))
+    }
 }
