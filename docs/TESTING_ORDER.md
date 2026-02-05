@@ -13,16 +13,30 @@
    ```
    (프로젝트 명: **OnGuard**. 이미 클론했다면 `git pull origin Backend`)
 
-2. **Android Studio에서 열기**
-   - **File → Open** → `OnGuard` 폴더 선택
+2. **clone 이후 할 일** (한 번만 하면 됨)
 
-3. **Gradle 동기화**
+   | 순서 | 할 일 | 필수 |
+   |------|--------|------|
+   | ① | **서브모듈 초기화** — `git submodule update --init` (java-llama.cpp) | ✅ |
+   | ② | **Android NDK 패치 적용** — `./scripts/apply-java-llama-android-patch.sh` (mac/Linux) 또는 `scripts\apply-java-llama-android-patch.bat` (Windows) | ✅ |
+   | ③ | **local.properties 생성** — `local.properties.template`을 복사해 `local.properties` 만들고, `sdk.dir`(Android SDK 경로)와 `THECHEAT_API_KEY`(선택) 입력 | ✅ (sdk.dir 필수) |
+   | ④ | **(선택) LLM 모델** — Qwen GGUF를 `app/src/main/assets/models/qwen2.5-1.5b-instruct-q4_k_m.gguf` 로 넣으면 LLM 탐지 사용, 없으면 Rule-based만 동작 | 선택 |
+
+   ```bash
+   # ① 서브모듈
+   git submodule update --init
+
+   # ② 패치 (mac/Linux)
+   ./scripts/apply-java-llama-android-patch.sh
+   # Windows: scripts\apply-java-llama-android-patch.bat
+   ```
+
+3. **Android Studio에서 열기**
+   - **File → Open** → **OnGuard** 폴더(루트) 선택 (`app` 폴더만 열지 말 것)
+
+4. **Gradle 동기화**
    - **File → Sync Project with Gradle Files** (또는 코끼리 아이콘)
    - "Gradle build finished" 나올 때까지 대기
-
-4. **(선택) LLM 모델**
-   - `app/src/main/assets/models/README.md` 참고
-   - Qwen GGUF를 `model.gguf`로 넣으면 LLM 탐지 사용, 없으면 Rule-based만 동작
 
 ---
 
