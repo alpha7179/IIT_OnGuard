@@ -12,9 +12,6 @@ android {
     namespace = "com.onguard"
     compileSdk = 34
 
-    // java-llama.cpp 서브모듈 경로
-    val jllamaLib = file("java-llama.cpp")
-
     defaultConfig {
         applicationId = "com.onguard"
         minSdk = 26
@@ -26,11 +23,6 @@ android {
 
         vectorDrawables {
             useSupportLibrary = true
-        }
-
-        // 16KB page size compatibility (Android 15+)
-        ndk {
-            // TODO: llama.cpp 빌드시 16KB 페이지 크기 대응 플래그를 맞추는 것이 이상적
         }
 
         // API Keys from local.properties
@@ -48,14 +40,6 @@ android {
         buildConfigField("String", "GEMINI_API_KEY", "\"${properties.getProperty("GEMINI_API_KEY", "")}\"")
         buildConfigField("int", "GEMINI_MAX_CALLS_PER_DAY", properties.getProperty("GEMINI_MAX_CALLS_PER_DAY", "100"))
 
-        // NOTE: 네이티브 빌드 환경 이슈로 임시 비활성화
-        // externalNativeBuild {
-        //     cmake {
-        //         // java-llama.cpp C++ 빌드에 필요한 기본 설정
-        //         cppFlags += ""
-        //         arguments += listOf<String>()
-        //     }
-        // }
     }
 
     buildTypes {
@@ -96,21 +80,6 @@ android {
         }
     }
 
-    // java-llama.cpp CMake & Java 소스 연결
-    // NOTE: 네이티브 빌드 환경 이슈로 임시 비활성화
-    // TODO: Windows 환경에서 CMake 빌드 설정 수정 필요
-    // externalNativeBuild {
-    //     cmake {
-    //         path = file("$jllamaLib/CMakeLists.txt")
-    //         version = "3.22.1"
-    //     }
-    // }
-
-    sourceSets {
-        getByName("main") {
-            java.srcDir("$jllamaLib/src/main/java")
-        }
-    }
 }
 
 dependencies {
