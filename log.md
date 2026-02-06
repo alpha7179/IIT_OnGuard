@@ -4,6 +4,86 @@
 
 ---
 
+## [0.4.0] - 2026-02-06
+
+### Added
+- **Counter Scam 112 전화번호 조회 API 통합** (P0)
+  - 전기통신금융사기 통합대응단 API 연동
+  - 전화번호의 보이스피싱/스미싱 신고 이력 실시간 조회
+  - 세션 쿠키 자동 관리 (CookieJar)
+
+#### 신규 파일
+
+| 파일 | 위치 | 설명 |
+|------|------|------|
+| `CounterScam112Api.kt` | `data/remote/api/` | Retrofit API 인터페이스 |
+| `CounterScamDto.kt` | `data/remote/dto/` | Request/Response DTO |
+| `CounterScamRepository.kt` | `domain/repository/` | Repository 인터페이스 |
+| `CounterScamRepositoryImpl.kt` | `data/repository/` | LRU 캐시 포함 구현체 |
+| `PhoneAnalysisResult.kt` | `domain/model/` | 분석 결과 모델 |
+| `PhoneAnalyzer.kt` | `detector/` | 전화번호 분석기 |
+
+#### CounterScam112Api.kt
+- **세션 초기화**: `initSession()` - GET으로 JSESSIONID 획득
+- **전화번호 조회**: `searchPhone()` - POST JSON 방식
+- 엔드포인트: `/main/voiceNumSearchAjax.do`
+
+#### CounterScamRepositoryImpl.kt
+- **LRU 캐시**: 100개 항목, 15분 TTL
+- **세션 관리**: 30분 TTL, 자동 재초기화
+- **Graceful Degradation**: API 실패 시 빈 결과 반환
+
+#### PhoneAnalyzer.kt
+- **전화번호 추출**: 한국 전화번호 패턴 6종
+  - 휴대폰 (010, 011, 016, 017, 018, 019)
+  - 지역번호 (02, 031~064)
+  - 대표번호 (1588, 1566 등)
+  - 인터넷전화 (070)
+  - 050 번호
+  - 국제번호 (+82)
+- **위험도 점수**:
+  - DB 등록: 0.9f
+  - 보이스피싱 이력: +0.21f
+  - 스미싱 이력: +0.18f
+  - 다수 신고 (5건+): +0.3f
+  - 의심 대역 (070/050): 0.2f
+
+### Changed
+
+#### NetworkModule.kt
+- **Counter Scam 112 전용 DI 추가**
+  - `@CounterScamRetrofit` Qualifier
+  - `@CounterScamOkHttp` Qualifier
+  - CookieJar 기반 세션 쿠키 자동 관리
+  - JSON Content-Type 인터셉터
+
+#### HybridScamDetector.kt
+- **PhoneAnalyzer 통합**
+  - 생성자에 PhoneAnalyzer 추가
+  - 전화번호 분석 결과 신뢰도 반영
+  - LLM 트리거 조건에 `hasScamPhone` 추가
+
+### Technical Details
+- **API 엔드포인트 발견**:
+  - 잘못된 경로: `/phishing/searchPhone.do` (Form-urlencoded)
+  - 올바른 경로: `/main/voiceNumSearchAjax.do` (JSON)
+- **세션 관리**: CookieJar로 JSESSIONID 자동 저장/전송
+- **테스트 결과**: `01012345678` 조회 시 `totCnt=6, smsCnt=6` 반환 확인
+- **빌드**: JDK 17/21 필요 (JDK 25 비호환)
+
+### API Response Example
+```json
+{
+  "totCnt": 6,
+  "voiceCnt": 0,
+  "smsCnt": 6,
+  "smsList": [{"dclrCn": "..."}],
+  "searchData": "최근 3개월 2025.11.06 ~ 2026.02.06"
+}
+```
+
+---
+
 ## [0.3.0] - 2026-02-06
 
 ### Added
