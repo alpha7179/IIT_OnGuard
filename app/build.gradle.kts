@@ -43,6 +43,11 @@ android {
         buildConfigField("String", "THECHEAT_API_KEY", "\"${properties.getProperty("THECHEAT_API_KEY", "")}\"")
         buildConfigField("String", "KISA_API_KEY", "\"${properties.getProperty("KISA_API_KEY", "")}\"")
 
+        // Gemini API 설정
+        buildConfigField("boolean", "ENABLE_LLM", properties.getProperty("ENABLE_LLM", "true"))
+        buildConfigField("String", "GEMINI_API_KEY", "\"${properties.getProperty("GEMINI_API_KEY", "")}\"")
+        buildConfigField("int", "GEMINI_MAX_CALLS_PER_DAY", properties.getProperty("GEMINI_MAX_CALLS_PER_DAY", "100"))
+
         // NOTE: 네이티브 빌드 환경 이슈로 임시 비활성화
         // externalNativeBuild {
         //     cmake {

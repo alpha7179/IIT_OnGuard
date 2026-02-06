@@ -4,6 +4,86 @@
 
 ---
 
+## [0.3.0] - 2026-02-06
+
+### Added
+- **Gemini API 통합 (MVP)** (P0 Critical)
+  - llama.cpp 대신 Google Gemini 2.5 Flash API 사용
+  - 일일 API 호출 제한 관리 (`GEMINI_MAX_CALLS_PER_DAY`)
+  - LLM 호출 최적화: ruleConfidence 0.5~1.0 + (금전/긴급/URL 신호) 조건부 호출
+
+#### LLMScamDetector.kt (전면 재작성)
+- **Gemini REST API 클라이언트 구현**
+  - 엔드포인트: `generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash`
+  - 한국어 프롬프트 빌드 (`buildPrompt()`)
+  - 응답 파싱 (`parseGeminiResponse()`)
+- **LRU 캐시 구현** (스크롤 중복 호출 방지)
+  - `LinkedHashMap(accessOrder=true)` 기반 LRU
+  - 최대 100개 분석 결과 캐시
+  - 같은 메시지 스크롤 시 API 재호출 방지
+
+#### ScamLlmClient.kt (신규)
+- LLM 클라이언트 추상화 인터페이스
+- 향후 서버 프록시/다른 LLM Provider 교체 용이
+
+#### DebugLog.kt (신규)
+- 디버그 빌드 전용 로깅 유틸
+- `maskText()`: 민감 텍스트 마스킹
+- `debugLog()`, `warnLog()`: 조건부 로그 출력
+
+#### HybridScamDetector.kt
+- **LLM 호출 조건 개선**
+  - 기존: `LLMScamAnalyzer` 의존
+  - 변경: `LLMScamDetector` 직접 의존
+- **신호 기반 호출 최적화**
+  - `hasMoneyKeyword`: 금전 키워드 존재 시
+  - `hasUrgencyKeyword`: 긴급 키워드 존재 시
+  - `hasUrl`: URL 포함 시
+  - 위 신호 없으면 LLM 호출 스킵
+
+#### build.gradle.kts
+- **BuildConfig 필드 추가**
+  - `ENABLE_LLM`: LLM 기능 활성화 플래그
+  - `GEMINI_API_KEY`: API 키 (local.properties에서 로드)
+  - `GEMINI_MAX_CALLS_PER_DAY`: 일일 호출 제한 (기본 100)
+
+#### DetectorModule.kt
+- `ScamLlmClient` 인터페이스 바인딩 추가
+- `LLMScamDetector`를 `ScamLlmClient`로 제공
+
+### Changed
+- **OnGuardApplication.kt**
+  - `initializeLLMInBackground()` 함수 제거 (Gemini는 사전 초기화 불필요)
+
+### Deprecated
+- **LLMScamAnalyzer.kt**
+  - `@Deprecated` 어노테이션 추가
+  - llama.cpp 기반 오프라인 LLM용으로 보존
+
+### Removed
+- **com/example/onguard/ 디렉토리 삭제**
+  - `MainActivity.kt`, `OverlayService.kt` 레거시 코드 제거
+- **AppModule.kt에서 LlamaManager 제거**
+  - Gemini API 사용으로 불필요
+
+### Technical Details
+- API 호출 최적화:
+  - Rule 기반 신뢰도 0.5~1.0 구간에서만 호출
+  - 금전/긴급/URL 신호 있을 때만 호출
+  - LRU 캐시로 스크롤 시 중복 호출 방지
+- llama.cpp 관련 코드는 비활성화만 (향후 오프라인 모드 지원 가능성)
+- 빌드 확인: BUILD SUCCESSFUL
+
+### Configuration
+```properties
+# local.properties
+ENABLE_LLM=true
+GEMINI_API_KEY=your_api_key_here
+GEMINI_MAX_CALLS_PER_DAY=100
+```
+
+---
+
 ## [0.2.9] - 2026-02-05
 
 ### Improved
@@ -398,4 +478,4 @@
 ---
 
 *Maintained by Backend Team*
-*Last Updated: 2026-02-05 (v0.2.9)*
+*Last Updated: 2026-02-06 (v0.3.0)*
