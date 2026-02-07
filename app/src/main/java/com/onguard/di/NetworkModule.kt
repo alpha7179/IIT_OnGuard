@@ -2,10 +2,13 @@ package com.onguard.di
 
 import com.onguard.BuildConfig
 import com.onguard.data.remote.api.CounterScam112Api
+import com.onguard.data.remote.api.PoliceFraudApi
 import com.onguard.data.remote.api.ThecheatApi
 import com.onguard.data.repository.CounterScamRepositoryImpl
+import com.onguard.data.repository.PoliceFraudRepositoryImpl
 import com.onguard.data.repository.ScamCheckRepositoryImpl
 import com.onguard.domain.repository.CounterScamRepository
+import com.onguard.domain.repository.PoliceFraudRepository
 import com.onguard.domain.repository.ScamCheckRepository
 import dagger.Module
 import dagger.Provides
@@ -32,6 +35,16 @@ annotation class CounterScamRetrofit
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
 annotation class CounterScamOkHttp
+
+/** Police Fraud API 전용 Retrofit Qualifier */
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class PoliceFraudRetrofit
+
+/** Police Fraud API 전용 OkHttpClient Qualifier */
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class PoliceFraudOkHttp
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -177,5 +190,95 @@ object NetworkModule {
     @Singleton
     fun provideCounterScamRepository(api: CounterScam112Api): CounterScamRepository {
         return CounterScamRepositoryImpl(api)
+    }
+
+    // ========== Police Fraud API (경찰청 사기계좌 조회) ==========
+
+    private const val POLICE_FRAUD_BASE_URL = "https://www.police.go.kr/"
+    private const val POLICE_FRAUD_TIMEOUT_SECONDS = 10L
+
+    /**
+     * Police Fraud API용 세션 쿠키 저장소
+     */
+    @Provides
+    @Singleton
+    @PoliceFraudOkHttp
+    fun providePoliceFraudCookieJar(): CookieJar {
+        return object : CookieJar {
+            private val cookieStore = ConcurrentHashMap<String, List<Cookie>>()
+
+            override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+                cookieStore[url.host] = cookies
+            }
+
+            override fun loadForRequest(url: HttpUrl): List<Cookie> {
+                return cookieStore[url.host] ?: emptyList()
+            }
+        }
+    }
+
+    /**
+     * Police Fraud API 전용 OkHttpClient
+     *
+     * 세션 쿠키 자동 관리 + jQuery AJAX 호출을 위한 특수 헤더 포함
+     */
+    @Provides
+    @Singleton
+    @PoliceFraudRetrofit
+    fun providePoliceFraudOkHttpClient(
+        @PoliceFraudOkHttp cookieJar: CookieJar
+    ): OkHttpClient {
+        return OkHttpClient.Builder().apply {
+            cookieJar(cookieJar)
+            connectTimeout(POLICE_FRAUD_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            readTimeout(POLICE_FRAUD_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            writeTimeout(POLICE_FRAUD_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+
+            // jQuery AJAX 호출을 위한 헤더 인터셉터
+            addInterceptor { chain ->
+                val originalRequest = chain.request()
+                val requestBuilder = originalRequest.newBuilder()
+                    .header("X-Requested-With", "XMLHttpRequest")
+                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 10; SM-G975F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
+                    .header("Referer", "https://www.police.go.kr/www/security/cyber/cyber04.jsp")
+                    .header("Accept", "application/json, text/javascript, */*; q=0.01")
+                    .header("Origin", "https://www.police.go.kr")
+
+                chain.proceed(requestBuilder.build())
+            }
+
+            if (BuildConfig.DEBUG) {
+                addInterceptor(HttpLoggingInterceptor().apply {
+                    level = HttpLoggingInterceptor.Level.BODY
+                })
+            }
+        }.build()
+    }
+
+    @Provides
+    @Singleton
+    @PoliceFraudRetrofit
+    fun providePoliceFraudRetrofit(
+        @PoliceFraudRetrofit okHttpClient: OkHttpClient
+    ): Retrofit {
+        return Retrofit.Builder()
+            .baseUrl(POLICE_FRAUD_BASE_URL)
+            .client(okHttpClient)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+    }
+
+    @Provides
+    @Singleton
+    fun providePoliceFraudApi(
+        @PoliceFraudRetrofit retrofit: Retrofit
+    ): PoliceFraudApi {
+        return retrofit.create(PoliceFraudApi::class.java)
+    }
+
+    @Provides
+    @Singleton
+    fun providePoliceFraudRepository(api: PoliceFraudApi): PoliceFraudRepository {
+        return PoliceFraudRepositoryImpl(api)
     }
 }

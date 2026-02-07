@@ -4,6 +4,7 @@ import com.onguard.domain.model.DetectionMethod
 import com.onguard.domain.model.ScamAnalysis
 import com.onguard.domain.model.ScamType
 import com.onguard.util.DebugLog
+import com.onguard.util.PiiMasker
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.max
@@ -11,11 +12,11 @@ import kotlin.math.max
 /**
  * 하이브리드 스캠 탐지기.
  *
- * Rule-based([KeywordMatcher], [UrlAnalyzer], [PhoneAnalyzer])와 LLM([ScamLlmClient]) 탐지를 결합하여
+ * Rule-based([KeywordMatcher], [UrlAnalyzer], [PhoneAnalyzer], [AccountAnalyzer])와 LLM([LLMScamDetector]) 탐지를 결합하여
  * 정확도 높은 스캠 탐지를 수행한다.
  *
  * ## 탐지 흐름
- * 1. Rule-based 1차 필터 (키워드 + URL + 전화번호)
+ * 1. Rule-based 1차 필터 (키워드 + URL + 전화번호 + 계좌번호)
  * 2. 최근 대화 맥락(마지막 N줄)을 추출해 LLM 컨텍스트로 활용
  * 3. 신뢰도 0.5~1.0 구간이면서 금전/긴급/URL 신호가 있을 때만 LLM 추가 분석
  * 4. 가중 평균(Rule 40%, LLM 60%)으로 최종 판정
@@ -29,7 +30,8 @@ import kotlin.math.max
  * @param keywordMatcher 키워드 기반 규칙 탐지기
  * @param urlAnalyzer URL 위험도 분석기
  * @param phoneAnalyzer 전화번호 위험도 분석기 (Counter Scam 112 DB)
- * @param scamLlmClient LLM 기반 탐지기 (API 또는 온디바이스 Gemma)
+ * @param accountAnalyzer 계좌번호 위험도 분석기 (경찰청 사기계좌 DB)
+ * @param llmScamDetector LLM 기반 탐지기 (Gemini API)
  */
 @Singleton
 class HybridScamDetector @Inject constructor(
@@ -37,6 +39,8 @@ class HybridScamDetector @Inject constructor(
     private val urlAnalyzer: UrlAnalyzer,
     private val phoneAnalyzer: PhoneAnalyzer,
     private val scamLlmClient: ScamLlmClient
+    private val accountAnalyzer: AccountAnalyzer,
+    private val llmScamDetector: LLMScamDetector
 ) {
 
     companion object {
@@ -84,13 +88,17 @@ class HybridScamDetector @Inject constructor(
         // 3. Phone number analysis (Counter Scam 112 DB)
         val phoneResult = phoneAnalyzer.analyze(text)
 
-        // 4. Combine rule-based results
+        // 4. Account number analysis (Police Fraud DB)
+        val accountResult = accountAnalyzer.analyze(text)
+
+        // 6. Combine rule-based results
         val combinedReasons = mutableListOf<String>()
         combinedReasons.addAll(keywordResult.reasons)
         combinedReasons.addAll(urlResult.reasons)
         combinedReasons.addAll(phoneResult.reasons)
+        combinedReasons.addAll(accountResult.reasons)
 
-        // 5. Calculate rule-based confidence
+        // 7. Calculate rule-based confidence
         var ruleConfidence = keywordResult.confidence
 
         // URL 분석 결과 반영
@@ -111,15 +119,24 @@ class HybridScamDetector @Inject constructor(
         } else if (phoneResult.isSuspiciousPrefix) {
             ruleConfidence += phoneResult.riskScore * 0.2f
         }
+
+        // 계좌번호 분석 결과 반영
+        // - 경찰청 DB에 등록된 사기계좌가 있으면 고위험
+        if (accountResult.hasFraudAccounts) {
+            ruleConfidence = max(ruleConfidence, accountResult.riskScore)
+            ruleConfidence += accountResult.riskScore * 0.3f
+        }
         ruleConfidence = ruleConfidence.coerceIn(0f, 1f)
 
         DebugLog.debugLog(TAG) {
             "step=rule_result ruleConfidence=$ruleConfidence keywordReasons=${keywordResult.reasons.size} " +
                     "urlReasons=${urlResult.reasons.size} phoneReasons=${phoneResult.reasons.size} " +
-                    "suspiciousUrlCount=${urlResult.suspiciousUrls.size} scamPhones=${phoneResult.scamPhones.size}"
+                    "accountReasons=${accountResult.reasons.size} " +
+                    "suspiciousUrlCount=${urlResult.suspiciousUrls.size} scamPhones=${phoneResult.scamPhones.size} " +
+                    "fraudAccounts=${accountResult.fraudAccounts.size}"
         }
 
-        // 6. Additional combination checks for medium confidence
+        // 8. Additional combination checks for medium confidence
         if (ruleConfidence > MEDIUM_CONFIDENCE_THRESHOLD) {
             val hasUrgency = text.contains("긴급", ignoreCase = true) ||
                     text.contains("급하", ignoreCase = true) ||
@@ -140,7 +157,7 @@ class HybridScamDetector @Inject constructor(
         // 조합 보너스 추가 후에도 1.0 초과 방지
         ruleConfidence = ruleConfidence.coerceIn(0f, 1f)
 
-        // 8. LLM 분석
+        // 9. LLM 분석
         // - 룰 기반 결과 + 키워드/URL/전화번호 신호를 바탕으로 LLM에게 컨텍스트 설명/보조 신뢰도를 요청한다.
         val lowerText = text.lowercase()
         val hasMoneyKeyword = listOf("입금", "송금", "계좌", "선입금", "대출", "돈", "급전")
@@ -149,22 +166,28 @@ class HybridScamDetector @Inject constructor(
             .any { lowerText.contains(it) }
         val hasUrl = urlResult.urls.isNotEmpty()
         val hasScamPhone = phoneResult.hasScamPhones
+        val hasScamAccount = accountResult.hasFraudAccounts
 
         val shouldUseLLM = useLLM &&
                 scamLlmClient.isAvailable() &&
                 ruleConfidence in LLM_TRIGGER_LOW..LLM_TRIGGER_HIGH &&
-                (hasMoneyKeyword || hasUrl || hasUrgencyKeyword || hasScamPhone)
+                (hasMoneyKeyword || hasUrl || hasUrgencyKeyword || hasScamPhone || hasScamAccount)
 
         if (shouldUseLLM) {
             DebugLog.debugLog(TAG) {
-                "step=llm_trigger ruleConfidence=$ruleConfidence useLLM=$useLLM llmAvailable=${scamLlmClient.isAvailable()} " +
-                        "hasMoneyKeyword=$hasMoneyKeyword hasUrgencyKeyword=$hasUrgencyKeyword hasUrl=$hasUrl hasScamPhone=$hasScamPhone"
+                "step=llm_trigger ruleConfidence=$ruleConfidence useLLM=$useLLM llmAvailable=${llmScamDetector.isAvailable()} " +
+                        "hasMoneyKeyword=$hasMoneyKeyword hasUrgencyKeyword=$hasUrgencyKeyword hasUrl=$hasUrl " +
+                        "hasScamPhone=$hasScamPhone hasScamAccount=$hasScamAccount"
             }
 
-            val request = ScamLlmRequest(
-                originalText = text,
-                recentContext = recentContext,
-                currentMessage = currentMessage,
+            // PII 마스킹 적용 (전화번호/계좌번호/주민번호 보호)
+            // - AccessibilityService 데이터가 외부 LLM으로 유출되지 않도록 보호
+            // - 전화번호: 부분 마스킹 (010-****-5678) - 대역 정보 유지
+            // - 계좌번호/주민번호: 완전 마스킹 ([계좌번호], [주민번호])
+            val llmResult = llmScamDetector.analyze(
+                originalText = PiiMasker.mask(text),
+                recentContext = PiiMasker.mask(recentContext),
+                currentMessage = PiiMasker.mask(currentMessage),
                 ruleReasons = combinedReasons,
                 detectedKeywords = keywordResult.detectedKeywords
             )
@@ -191,8 +214,10 @@ class HybridScamDetector @Inject constructor(
             }
         }
 
-        // 9. Final rule-based result
-        val hasExternalDbHit = urlResult.suspiciousUrls.isNotEmpty() || phoneResult.hasScamPhones
+        // 10. Final rule-based result
+        val hasExternalDbHit = urlResult.suspiciousUrls.isNotEmpty() ||
+                phoneResult.hasScamPhones ||
+                accountResult.hasFraudAccounts
         return createRuleBasedResult(
             ruleConfidence.coerceIn(0f, 1f),
             combinedReasons,

@@ -4,6 +4,122 @@
 
 ---
 
+## [0.4.3] - 2026-02-07
+
+### Added
+
+#### 경찰청 사기계좌 조회 API 연동 (P0)
+- **PoliceFraudApi.kt** - Retrofit 인터페이스
+  - 세션 초기화: `GET /www/security/cyber/cyber04.jsp`
+  - 계좌 조회: `POST /user/cyber/fraud.do` (form-urlencoded)
+  - 요청 파라미터: `key=P`, `no=계좌번호`, `ftype=A`
+  - 응답 형식: `{"result":true,"value":[{"result":"OK","count":"0"}]}`
+
+- **PoliceFraudDto.kt** - Response DTO
+  - `PoliceFraudResponse`: 조회 결과 (success, value, message)
+  - `PoliceFraudValue`: 상세 정보 (result, count)
+
+- **PoliceFraudRepository.kt** - Domain 인터페이스
+
+- **PoliceFraudRepositoryImpl.kt** - 구현체
+  - LRU 캐시: 100개 항목, 15분 TTL
+  - 세션 관리: 30분 TTL, 자동 재초기화
+  - Thread-safe: Mutex 사용
+  - Graceful degradation: API 실패 시 빈 결과 반환
+
+- **AccountAnalysisResult.kt** - 분석 결과 모델
+  - `extractedAccounts`: 추출된 계좌번호 목록
+  - `fraudAccounts`: 사기 신고 이력 있는 계좌
+  - `riskScore`: 종합 위험도 (0.0~1.0)
+  - `totalFraudCount`: 총 사기 신고 건수
+
+- **AccountAnalyzer.kt** - 계좌번호 분석기
+  - 4가지 계좌번호 패턴 지원 (3단, 6-2-6, 4단, 연속 숫자)
+  - 전화번호와 자동 구분 (010, 02, 031~064 제외)
+  - 위험도 점수: DB 등록(3건+) 0.95f, 다수 신고(5건+) +0.3f
+  - 경찰청 API 기준 3건 이상 신고 시 사기계좌로 판정
+
+### Fixed
+
+#### API 엔드포인트 수정
+- 경찰청 API 실제 엔드포인트로 수정: `/www/security/cyber/cyber04.jsp` → `/user/cyber/fraud.do`
+- curl 테스트로 API 정상 동작 확인 완료
+
+#### 사기 임계값 수정
+- 경찰청 공식 기준에 맞춰 `count >= 3` 조건으로 변경 (기존 `count > 0`)
+
+### Changed
+
+#### NetworkModule.kt - DI 바인딩 추가
+- `@PoliceFraudRetrofit`, `@PoliceFraudOkHttp` Qualifier 추가
+- 경찰청 API 전용 OkHttpClient (CookieJar + AJAX 헤더)
+- Retrofit 인스턴스 및 Repository 바인딩
+
+#### HybridScamDetector.kt - AccountAnalyzer 통합
+- 생성자에 `AccountAnalyzer` 의존성 추가
+- `analyze()` 메서드에 계좌번호 분석 단계 추가
+- 사기계좌 탐지 시 ruleConfidence 상승 (최대 +0.3f)
+- LLM 트리거 조건에 `hasScamAccount` 추가
+
+### Architecture
+```
+Text Input → HybridScamDetector
+    ├── KeywordMatcher (키워드)
+    ├── UrlAnalyzer (KISA DB)
+    ├── PhoneAnalyzer (Counter Scam 112)
+    ├── AccountAnalyzer (경찰청 사기계좌 DB)  ← 신규
+    └── LLMScamDetector (Gemini API)
+```
+
+### Test Scenarios
+```
+✅ "계좌번호 110-123-123456" → 경찰청 DB 조회
+✅ "국민 123456-12-123456" → 6-2-6 형식 인식
+✅ "농협 351-1234-1234-13" → 4단 형식 인식
+✅ 사기계좌 탐지 시 → riskScore + 0.95f, 이유 추가
+✅ 전화번호 010-1234-5678 → 계좌로 오인식 안 함
+```
+
+---
+
+## [0.4.2] - 2026-02-07
+
+### Added
+
+#### PiiMasker.kt - 개인정보 마스킹 유틸리티 (Security Critical)
+- **LLM 전송 전 PII 마스킹** (P0)
+  - AccessibilityService 데이터가 외부 LLM(Gemini)으로 유출되지 않도록 보호
+  - security-reviewer.md CRITICAL 위반사항 해결
+- **마스킹 대상**
+  - 전화번호: 부분 마스킹 (`010-****-5678`) - 대역 정보(070/050) 유지
+  - 계좌번호: 완전 마스킹 (`[계좌번호]`)
+  - 주민등록번호: 완전 마스킹 (`[주민번호]`)
+  - 여권번호: 완전 마스킹 (`[여권번호]`)
+
+### Changed
+
+#### HybridScamDetector.kt - LLM 호출 시 마스킹 적용
+- `llmScamDetector.analyze()` 호출 전 `PiiMasker.mask()` 적용
+  - `originalText` → `PiiMasker.mask(text)`
+  - `recentContext` → `PiiMasker.mask(recentContext)`
+  - `currentMessage` → `PiiMasker.mask(currentMessage)`
+
+### Security
+- **AccessibilityService 데이터 보호**
+  - Rule-based/API 검사에서 정상 판정된 전화번호/계좌번호도 마스킹
+  - LLM은 마스킹된 텍스트로 스캠 판단 (PII 원본 노출 방지)
+
+### Test Scenarios
+```
+✅ "연락처: 010-1234-5678" → "연락처: 010-****-5678"
+✅ "전화: 070-1234-5678" → "전화: 070-****-5678" (대역 정보 유지)
+✅ "입금: 110-123-456789" → "입금: [계좌번호]"
+✅ "주민번호 901234-1234567" → "주민번호 [주민번호]"
+✅ 일반 텍스트 → 변경 없음
+```
+
+---
+
 ## [0.4.1] - 2026-02-07
 
 ### Added
