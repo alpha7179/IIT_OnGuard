@@ -2,6 +2,11 @@
 
 package com.onguard.presentation.ui.dashboard
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -12,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -190,53 +196,134 @@ fun DashboardTabBar(
     selectedTab: DashboardTab,
     onTabSelected: (DashboardTab) -> Unit
 ) {
-    Row(
+    // 탭바 전체를 감싸는 알약 모양의 글래스모피즘 박스
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(BackgroundLight)
-            .padding(4.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
+            .padding(horizontal = 20.dp, vertical = 8.dp) // 좌우 여백을 주어 플로팅 느낌
+            .height(64.dp) // 높이 약간 증가
     ) {
-        DashboardTab.values().forEach { tab ->
-            val isSelected = selectedTab == tab
-            
-            if (isSelected) {
-                Surface(
-                    modifier = Modifier.weight(1f),
-                    color = CardBackground,
-                    shape = RoundedCornerShape(10.dp),
-                    shadowElevation = 2.dp
+        // 1. 배경 그림자 (은은한 깊이감)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(4.dp)
+                .clip(CircleShape) // 완전한 원형(알약)
+                .background(
+                    androidx.compose.ui.graphics.Brush.radialGradient(
+                        colors = listOf(
+                            Color.Black.copy(alpha = 0.15f),
+                            Color.Transparent
+                        ),
+                        radius = 300f
+                    )
+                )
+        )
+
+        // 2. 메인 글래스 패널 (알약 모양)
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            shape = CircleShape, // Capsule Shape
+            color = Color.Transparent,
+            border = androidx.compose.foundation.BorderStroke(
+                width = 1.5.dp, // 테두리 두께 약간 증가
+                brush = androidx.compose.ui.graphics.Brush.linearGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = 0.6f), // 상단 왼쪽: 강한 빛 반사
+                        Color.White.copy(alpha = 0.1f), // 중간: 투명
+                        Color.White.copy(alpha = 0.05f),
+                        Color.White.copy(alpha = 0.3f)  // 하단 오른쪽: 은은한 반사
+                    ),
+                    start = androidx.compose.ui.geometry.Offset(0f, 0f),
+                    end = androidx.compose.ui.geometry.Offset(Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY)
+                )
+            )
+        ) {
+            // 내부 반투명 배경 (그라데이션)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        androidx.compose.ui.graphics.Brush.linearGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.25f),
+                                Color.White.copy(alpha = 0.05f)
+                            )
+                        )
+                    )
+                    .padding(6.dp) // 내부 패딩
+            ) {
+                // *** 3. 슬라이딩 인디케이터 및 탭 아이템 구현 ***
+                BoxWithConstraints(
+                    modifier = Modifier.fillMaxSize()
                 ) {
-                    Row(
+                    val tabWidth = maxWidth / DashboardTab.values().size
+                    
+                    // 인디케이터 위치 애니메이션
+                    val indicatorOffset by animateDpAsState(
+                        targetValue = tabWidth * selectedTab.ordinal,
+                        animationSpec = spring(
+                            stiffness = Spring.StiffnessLow,
+                            dampingRatio = Spring.DampingRatioNoBouncy
+                        ),
+                        label = "indicatorOffset"
+                    )
+
+                    // 3-1. 움직이는 인디케이터 (선택된 탭 배경)
+                    Surface(
                         modifier = Modifier
-                            .padding(vertical = 10.dp)
-                            .clickable { onTabSelected(tab) },
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
+                            .width(tabWidth)
+                            .fillMaxHeight()
+                            .offset(x = indicatorOffset),
+                        color = Color.White.copy(alpha = 0.85f), // 불투명에 가까운 흰색
+                        shape = CircleShape, // 둥근 알약 모양
+                        shadowElevation = 4.dp // 그림자 추가로 입체감
+                    ) {}
+
+                    // 3-2. 탭 아이템들 (Row로 배치)
+                    Row(
+                        modifier = Modifier.fillMaxSize()
                     ) {
-                        Icon(
-                            tab.icon,
-                            null,
-                            tint = TextPrimary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            tab.title,
-                            color = TextPrimary,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
+                        DashboardTab.values().forEach { tab ->
+                            val isSelected = selectedTab == tab
+                            
+                            // 텍스트/아이콘 색상 애니메이션
+                            val contentColor by animateColorAsState(
+                                targetValue = if (isSelected) Color(0xFF1A1A1A) else TextSecondary.copy(alpha = 0.9f),
+                                animationSpec = tween(durationMillis = 300),
+                                label = "contentColor"
+                            )
+
+                            Box(
+                                modifier = Modifier
+                                    .width(tabWidth)
+                                    .fillMaxHeight()
+                                    .clip(CircleShape)
+                                    .clickable { onTabSelected(tab) },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        tab.icon,
+                                        null,
+                                        tint = contentColor,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    // 선택 안 된 상태에서도 텍스트 표시 (공간 충분함)
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        tab.title,
+                                        color = contentColor,
+                                        fontSize = 14.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
-            } else {
-                TabItem(
-                    icon = tab.icon,
-                    text = tab.title,
-                    modifier = Modifier.weight(1f),
-                    onClick = { onTabSelected(tab) }
-                )
             }
         }
     }
@@ -249,32 +336,13 @@ fun TabItem(
     modifier: Modifier = Modifier,
     onClick: () -> Unit = {}
 ) {
-    Row(
-        modifier = modifier
-            .padding(vertical = 10.dp)
-            .clickable { onClick() },
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            icon,
-            null,
-            tint = TextSecondary,
-            modifier = Modifier.size(18.dp)
-        )
-        Spacer(modifier = Modifier.width(6.dp))
-        Text(
-            text,
-            color = TextSecondary,
-            fontSize = 14.sp
-        )
-    }
+    // Deprecated: DashboardTabBar 내부로 로직 통합됨
 }
 
 // 탭 정의
 enum class DashboardTab(val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     RATIO("비율", Icons.Default.PieChart),
-    HISTORY("내역", Icons.Default.List),
+    HISTORY("분류", Icons.Default.List),
     LOG("로그", Icons.Default.Description)
 }
 

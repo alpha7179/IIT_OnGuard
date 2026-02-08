@@ -471,8 +471,24 @@ fun DashboardScreen(
                         AnimatedContent(
                             targetState = selectedTab,
                             transitionSpec = {
-                                fadeIn(animationSpec = tween(300)) + slideInVertically { slideDistance } with
-                                fadeOut(animationSpec = tween(300)) + slideOutVertically { -slideDistance }
+                                val direction = if (targetState.ordinal > initialState.ordinal) {
+                                    // 오른쪽으로 이동 (예: 0 -> 1)
+                                    // 새 콘텐츠: 오른쪽에서 들어옴, 구 콘텐츠: 왼쪽으로 나감
+                                    AnimatedContentTransitionScope.SlideDirection.Left
+                                } else {
+                                    // 왼쪽으로 이동 (예: 1 -> 0)
+                                    // 새 콘텐츠: 왼쪽에서 들어옴, 구 콘텐츠: 오른쪽으로 나감
+                                    AnimatedContentTransitionScope.SlideDirection.Right
+                                }
+
+                                slideIntoContainer(
+                                    towards = direction,
+                                    animationSpec = tween(500) // 조금 더 부드럽게 시간 늘림
+                                ) + fadeIn(animationSpec = tween(500)) togetherWith
+                                slideOutOfContainer(
+                                    towards = direction,
+                                    animationSpec = tween(500)
+                                ) + fadeOut(animationSpec = tween(500))
                             },
                             label = "TabContent"
                         ) { targetTab ->
