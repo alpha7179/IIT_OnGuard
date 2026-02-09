@@ -7,7 +7,6 @@ import androidx.compose.ui.zIndex
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.background
@@ -46,6 +45,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.res.painterResource
 import com.onguard.R
 import com.onguard.presentation.theme.*
+import com.onguard.presentation.viewmodel.MainViewModel
 import java.util.*
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -57,7 +57,8 @@ enum class DashboardState {
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
 fun DashboardScreen(
-    state: DashboardUiState = DashboardUiState()
+    state: DashboardUiState = DashboardUiState(),
+    viewModel: MainViewModel? = null
 ) {
     // Context for navigation
     val context = LocalContext.current
@@ -687,10 +688,10 @@ fun DashboardScreen(
                                             // 전체 삭제 버튼
                                             item {
                                                 Button(
-                                                    onClick = { /* TODO: Clear all alerts */ },
+                                                    onClick = { viewModel?.clearAllAlerts() },
                                                     modifier = Modifier.fillMaxWidth(),
                                                     colors = ButtonDefaults.buttonColors(
-                                                        containerColor = Color(0xFFFF5252)
+                                                        containerColor = Color(0xFFC02729)
                                                     )
                                                 ) {
                                                     Text("알림 전체 삭제", style = MaterialTheme.typography.labelLarge)
@@ -704,7 +705,10 @@ fun DashboardScreen(
                                                     delay = if (index < 8) 0 else (index % 6) * 50, 
                                                     skeleton = { RecentAlertSkeleton() }
                                                 ) {
-                                                    RecentAlertItem(alert = alert)
+                                                    RecentAlertItem(
+                                                        alert = alert,
+                                                        onDelete = { id -> viewModel?.deleteAlert(id) }
+                                                    )
                                                 }
                                                 // Column의 spacedBy 대신 각 아이템 아래에 Spacer 추가
                                                 Spacer(modifier = Modifier.height(8.dp))

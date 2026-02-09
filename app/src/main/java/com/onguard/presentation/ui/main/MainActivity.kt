@@ -43,8 +43,11 @@ class MainActivity : ComponentActivity() {
                 // ViewModel의 StateFlow를 Compose State로 변환
                 val uiState by viewModel.uiState.collectAsState()
                 
-                // 새로운 대시보드 화면에 데이터(State) 주입
-                DashboardScreen(state = uiState)
+                // 새로운 대시보드 화면에 데이터(State) + ViewModel 주입
+                DashboardScreen(
+                    state = uiState,
+                    viewModel = viewModel
+                )
             }
         }
     }

@@ -869,6 +869,22 @@ class ScamDetectionAccessibilityService : AccessibilityService() {
                         OverlayService.EXTRA_DETECTED_KEYWORDS,
                         ArrayList(analysis.detectedKeywords)
                     )
+                    putStringArrayListExtra(
+                        OverlayService.EXTRA_HIGH_RISK_KEYWORDS,
+                        ArrayList(analysis.highRiskKeywords)
+                    )
+                    putStringArrayListExtra(
+                        OverlayService.EXTRA_MEDIUM_RISK_KEYWORDS,
+                        ArrayList(analysis.mediumRiskKeywords)
+                    )
+                    putStringArrayListExtra(
+                        OverlayService.EXTRA_LOW_RISK_KEYWORDS,
+                        ArrayList(analysis.lowRiskKeywords)
+                    )
+                    putExtra(
+                        OverlayService.EXTRA_HAS_COMBINATION,
+                        analysis.hasSuspiciousCombination
+                    )
                 }
                 
                 Log.d(TAG, "Starting OverlayService with intent...")
@@ -909,7 +925,7 @@ class ScamDetectionAccessibilityService : AccessibilityService() {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "OnGuard Scam Detection",
-                NotificationManager.IMPORTANCE_LOW
+                NotificationManager.IMPORTANCE_HIGH // HIGH로 변경하여 최상단 유지
             ).apply {
                 description = "Shows active scam detection status"
                 setShowBadge(false)
@@ -922,6 +938,11 @@ class ScamDetectionAccessibilityService : AccessibilityService() {
         // Always start foreground service, regardless of active state
         // The content of the notification will change based on the state
         val notification = buildNotification()
+        
+        // NotificationManager를 통해 직접 업데이트하여 타임스탬프 갱신
+        notificationManager.notify(NOTIFICATION_ID, notification)
+        
+        // 포그라운드 서비스 시작
         startForeground(NOTIFICATION_ID, notification)
     }
 
@@ -938,22 +959,25 @@ class ScamDetectionAccessibilityService : AccessibilityService() {
 
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(iconRes)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_MAX) // 최상단 우선순위
+            .setOngoing(true) // 지속적인 알림 (스와이프로 삭제 불가)
             .setContentIntent(openIntent)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE) // 서비스 카테고리
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC) // 잠금화면에서도 표시
+            .setOnlyAlertOnce(true) // 업데이트 시 소리/진동 없음
 
         if (!isEnabled) {
             // Disabled state
             contentTitle = "OnGuard가 꺼져 있습니다."
             builder.setContentTitle(contentTitle)
-            builder.setShowWhen(false) // Hide timer
+            builder.setShowWhen(false)
             builder.setUsesChronometer(false) // Explicitly disable
             builder.addAction(R.drawable.ic_action_play, "켜기", getPendingIntent(ACTION_START))
         } else if (isPaused) {
             // Paused state
             contentTitle = "OnGuard가 일시중지되었습니다."
             builder.setContentTitle(contentTitle)
-            builder.setShowWhen(false) // Hide timer
+            builder.setShowWhen(false)
             builder.setUsesChronometer(false) // Explicitly disable
             builder.addAction(R.drawable.ic_action_play, "다시 시작", getPendingIntent(ACTION_RESUME))
             builder.addAction(R.drawable.ic_action_end, "종료", getPendingIntent(ACTION_STOP))
@@ -965,6 +989,7 @@ class ScamDetectionAccessibilityService : AccessibilityService() {
             builder.setContentTitle("OnGuard가 탐지중입니다.")
             builder.setCustomBigContentView(remoteViews)
             builder.setStyle(NotificationCompat.DecoratedCustomViewStyle())
+            builder.setShowWhen(false) // 시간 표시 안 함 (크로노미터 사용)
             
             builder.addAction(R.drawable.ic_action_pause, "일시정지", getPendingIntent(ACTION_PAUSE))
             builder.addAction(R.drawable.ic_action_end, "종료", getPendingIntent(ACTION_STOP))

@@ -82,6 +82,24 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    // ==== 대시보드 - 알림 삭제 관련 액션 ====
+
+    /** 단일 알림 삭제 */
+    fun deleteAlert(alertId: Long) {
+        viewModelScope.launch {
+            repository.deleteAlert(alertId)
+        }
+    }
+
+    /** 모든 알림 삭제 (최근 목록 포함 전체) */
+    fun clearAllAlerts() {
+        viewModelScope.launch {
+            // 전체 삭제를 위한 간단한 구현: 매우 오래된 날짜 기준으로 모두 삭제
+            // (실제 구현에서는 별도 DAO 쿼리로 전체 삭제를 두는 것도 가능)
+            repository.deleteOldAlerts(daysAgo = Int.MAX_VALUE)
+        }
+    }
+
     // 1초마다 틱을 발생시키는 Flow (실시간 타이머 및 카운트 증가 효과용)
     private val tickerFlow = flow {
         while (true) {
@@ -122,13 +140,17 @@ class MainViewModel @Inject constructor(
         val isSafe = highRiskCount == 0 
         
         // 탐지 시간 및 시뮬레이션 수치 계산
-        // 현재 활성화 상태라면 진행 중인 시간도 포함해야 함
-        val elapsedRealtime = android.os.SystemClock.elapsedRealtime()
-        val chronometerBase = settings.calculateChronometerBase(elapsedRealtime)
-        
-        // Widget과 동일하게 '현재 세션의 누적 시간'을 기준으로 표시하여 동기화
-        val totalTime = elapsedRealtime - chronometerBase
-        val runningTimeSec = totalTime / 1000
+        // - DataStore에 누적된 totalAccumulatedTime(과거 전체)
+        // - 현재 활성 세션의 경과 시간(일시정지/정지 전까지)을 합산해서 사용
+        val now = System.currentTimeMillis()
+        val currentSegment = if (settings.isActiveNow() && settings.detectionStartTime > 0) {
+            now - settings.detectionStartTime
+        } else {
+            0L
+        }
+
+        // 총 누적 탐지 시간 (밀리초)
+        val totalTime = settings.totalAccumulatedTime + currentSegment
 
         // [수정] 시뮬레이션 로직 제거 - 실제 데이터만 사용
         val simHigh = highRiskCount

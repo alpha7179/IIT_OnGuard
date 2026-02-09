@@ -22,15 +22,23 @@
         android:theme="@style/Theme.OnGuard"
         tools:targetApi="31">
 
-        <!-- Main Activity -->
+        <!-- Splash Activity (Launcher) -->
         <activity
-            android:name=".presentation.ui.main.MainActivity"
+            android:name=".presentation.ui.splash.SplashActivity"
             android:exported="true"
-            android:theme="@style/Theme.OnGuard">
+            android:theme="@style/Theme.OnGuard"
+            android:screenOrientation="portrait">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+        </activity>
+
+        <!-- Main Activity -->
+        <activity
+            android:name=".presentation.ui.main.MainActivity"
+            android:exported="false"
+            android:theme="@style/Theme.OnGuard">
         </activity>
 
         <!-- Settings Activity -->
