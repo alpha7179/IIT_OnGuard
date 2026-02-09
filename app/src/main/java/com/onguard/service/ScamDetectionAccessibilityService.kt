@@ -869,17 +869,18 @@ class ScamDetectionAccessibilityService : AccessibilityService() {
                         OverlayService.EXTRA_DETECTED_KEYWORDS,
                         ArrayList(analysis.detectedKeywords)
                     )
+                    // 키워드 분류 매핑: 매우위험→고위험, 위험→중위험, 중위험→저위험
                     putStringArrayListExtra(
                         OverlayService.EXTRA_HIGH_RISK_KEYWORDS,
-                        ArrayList(analysis.highRiskKeywords)
+                        ArrayList(analysis.highRiskKeywords) // CRITICAL → 고위험
                     )
                     putStringArrayListExtra(
                         OverlayService.EXTRA_MEDIUM_RISK_KEYWORDS,
-                        ArrayList(analysis.mediumRiskKeywords)
+                        ArrayList(analysis.mediumRiskKeywords) // HIGH → 중위험
                     )
                     putStringArrayListExtra(
                         OverlayService.EXTRA_LOW_RISK_KEYWORDS,
-                        ArrayList(analysis.lowRiskKeywords)
+                        ArrayList(analysis.lowRiskKeywords) // MEDIUM → 저위험
                     )
                     putExtra(
                         OverlayService.EXTRA_HAS_COMBINATION,
