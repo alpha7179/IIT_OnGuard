@@ -70,15 +70,60 @@ fun SplashScreen(onVideoComplete: () -> Unit) {
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        // 비디오 뷰
+        // 비디오 뷰 - 완전히 꽉 차게
         AndroidView(
             factory = { ctx ->
                 VideoView(ctx).apply {
+                    // 레이아웃 파라미터 설정
+                    layoutParams = android.widget.FrameLayout.LayoutParams(
+                        android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                        android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+                    )
+                    
                     val videoUri = Uri.parse("android.resource://${context.packageName}/${R.raw.intro}")
                     setVideoURI(videoUri)
                     
                     setOnPreparedListener { mediaPlayer ->
                         mediaPlayer.isLooping = false
+                        
+                        // 비디오를 화면에 꽉 차게 설정
+                        mediaPlayer.setVideoScalingMode(android.media.MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING)
+                        
+                        // 화면 크기 가져오기
+                        val displayMetrics = context.resources.displayMetrics
+                        val screenWidth = displayMetrics.widthPixels
+                        val screenHeight = displayMetrics.heightPixels
+                        
+                        // 비디오 크기
+                        val videoWidth = mediaPlayer.videoWidth
+                        val videoHeight = mediaPlayer.videoHeight
+                        
+                        // 비율 계산하여 크기 조정
+                        val screenRatio = screenWidth.toFloat() / screenHeight.toFloat()
+                        val videoRatio = videoWidth.toFloat() / videoHeight.toFloat()
+                        
+                        if (screenRatio > videoRatio) {
+                            // 화면이 비디오보다 넓음 - 너비 기준으로 맞춤
+                            val scale = screenWidth.toFloat() / videoWidth.toFloat()
+                            val scaledHeight = (videoHeight * scale).toInt()
+                            layoutParams = android.widget.FrameLayout.LayoutParams(
+                                screenWidth,
+                                scaledHeight
+                            ).apply {
+                                gravity = android.view.Gravity.CENTER
+                            }
+                        } else {
+                            // 화면이 비디오보다 좁음 - 높이 기준으로 맞춤
+                            val scale = screenHeight.toFloat() / videoHeight.toFloat()
+                            val scaledWidth = (videoWidth * scale).toInt()
+                            layoutParams = android.widget.FrameLayout.LayoutParams(
+                                scaledWidth,
+                                screenHeight
+                            ).apply {
+                                gravity = android.view.Gravity.CENTER
+                            }
+                        }
+                        
                         videoDuration = mediaPlayer.duration
                         videoStarted = true
                         start()

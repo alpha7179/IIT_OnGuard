@@ -302,6 +302,9 @@ class KeywordMatcher @Inject constructor() {
         }
         
         totalConfidence += comboBonus
+        
+        // 의심스러운 조합 여부
+        val hasSuspiciousCombination = comboBonus > 0f
 
         // 최종 신뢰도 계산 (0~1 범위로 정규화)
         val finalConfidence = totalConfidence.coerceIn(0f, 1f)
